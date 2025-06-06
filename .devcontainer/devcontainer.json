@@ -1,0 +1,82 @@
+{
+    "name": "TSP Lab - C# DevContainer",
+    "build": {
+        "dockerfile": "../Dockerfile",
+        "target": "build"
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/dotnet:2": {
+            "version": "8.0",
+            "additionalVersions": "8.0"
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "20"
+        },
+        "ghcr.io/devcontainers/features/git:1": {
+            "version": "latest"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-dotnettools.csharp",
+                "ms-dotnettools.blazorwasm-companion",
+                "ms-vscode.vscode-json",
+                "ms-vscode.vscode-typescript-next",
+                "bradlc.vscode-tailwindcss",
+                "formulahendry.auto-rename-tag",
+                "ms-vscode.test-adapter-converter",
+                "ms-dotnettools.dotnet-interactive-vscode",
+                "humao.rest-client",
+                "github.copilot",
+                "ms-azuretools.vscode-docker"
+            ],
+            "settings": {
+                "dotnet.defaultSolution": "TspLab.sln",
+                "omnisharp.enableRoslynAnalyzers": true,
+                "omnisharp.enableEditorConfigSupport": true,
+                "csharp.semanticHighlighting.enabled": true,
+                "editor.formatOnSave": true,
+                "editor.codeActionsOnSave": {
+                    "source.fixAll": "explicit",
+                    "source.organizeImports": "explicit"
+                },
+                "files.exclude": {
+                    "**/bin": true,
+                    "**/obj": true,
+                    "**/.vs": true
+                },
+                "search.exclude": {
+                    "**/bin": true,
+                    "**/obj": true,
+                    "**/.vs": true
+                }
+            }
+        }
+    },
+    "forwardPorts": [8080, 8081, 5000, 5001],
+    "portsAttributes": {
+        "8080": {
+            "label": "API",
+            "onAutoForward": "notify"
+        },
+        "8081": {
+            "label": "API HTTPS",
+            "onAutoForward": "notify"
+        },
+        "5000": {
+            "label": "WebAssembly",
+            "onAutoForward": "notify"
+        },
+        "5001": {
+            "label": "WebAssembly HTTPS",
+            "onAutoForward": "notify"
+        }
+    },
+    "postCreateCommand": "dotnet restore && dotnet build",
+    "remoteUser": "vscode",
+    "workspaceFolder": "/workspaces/tsp-lab",
+    "mounts": [
+        "source=${localWorkspaceFolder},target=/workspaces/tsp-lab,type=bind,consistency=cached"
+    ]
+}

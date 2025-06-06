@@ -1,0 +1,342 @@
+﻿@page "/"
+@using TspLab.Domain.Entities
+@using TspLab.Domain.Models
+@using TspLab.Web.Services
+@inject TspApiService ApiService
+@inject SignalRService SignalRService
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<PageTitle>TSP Lab - Genetic Algorithm Solver</PageTitle>
+
+<div class="min-h-screen bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center">
+                    <h1 class="text-2xl font-bold text-gray-900">TSP Lab</h1>
+                    <span class="ml-3 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                        Genetic Algorithm Solver
+                    </span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center">
+                        <div class="w-2 h-2 rounded-full @GetConnectionStatusClass()"></div>
+                        <span class="ml-2 text-sm text-gray-600">@GetConnectionStatusText()</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <!-- Sidebar Configuration -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow-sm border p-6 sticky top-8">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-6">Configuration</h2>
+                    
+                    <!-- City Generation -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Cities</label>
+                        <div class="flex space-x-2">
+                            <input @bind="cityCount" type="number" min="3" max="100" 
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                                   placeholder="Count" />
+                            <button @onclick="GenerateCities" disabled="@isGenerating"
+                                    class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50">
+                                @if (isGenerating) { <span>...</span> } else { <span>Generate</span> }
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- GA Parameters -->
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Population Size</label>
+                            <input @bind="config.PopulationSize" type="number" min="10" max="500"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Max Generations</label>
+                            <input @bind="config.MaxGenerations" type="number" min="10" max="2000"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Mutation Rate</label>
+                            <input @bind="config.MutationRate" type="number" step="0.001" min="0" max="1"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Elitism Rate</label>
+                            <input @bind="config.ElitismRate" type="number" step="0.01" min="0" max="1"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                        </div>
+                    </div>
+
+                    <!-- Strategy Selection -->
+                    @if (availableStrategies.HasValue)
+                    {
+                        <div class="mt-6 space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Crossover</label>
+                                <select @bind="config.CrossoverName" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                                    @foreach (var crossover in availableStrategies.Value.Crossovers)
+                                    {
+                                        <option value="@crossover">@crossover</option>
+                                    }
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Mutation</label>
+                                <select @bind="config.MutationName" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                                    @foreach (var mutation in availableStrategies.Value.Mutations)
+                                    {
+                                        <option value="@mutation">@mutation</option>
+                                    }
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Fitness Function</label>
+                                <select @bind="config.FitnessFunctionName" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                                    @foreach (var fitness in availableStrategies.Value.FitnessFunctions)
+                                    {
+                                        <option value="@fitness">@fitness</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Control Buttons -->
+                    <div class="mt-6 space-y-2">
+                        <button @onclick="StartSolving" disabled="@(!CanStartSolving())"
+                                class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                            @if (isSolving) { <span>Solving...</span> } else { <span>Start Solving</span> }
+                        </button>
+                        
+                        @if (isSolving)
+                        {
+                            <button @onclick="StopSolving"
+                                    class="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+                                Stop Solving
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="lg:col-span-3 space-y-6">
+                <!-- Current Best Solution -->
+                @if (currentResult.HasValue && cities != null)
+                {
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Best Solution</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-blue-600">@currentResult.Value.Generation</div>
+                                <div class="text-sm text-gray-500">Generation</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-green-600">@currentResult.Value.BestDistance.ToString("F2")</div>
+                                <div class="text-sm text-gray-500">Distance</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-purple-600">@currentResult.Value.BestFitness.ToString("F4")</div>
+                                <div class="text-sm text-gray-500">Fitness</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-orange-600">@currentResult.Value.ElapsedMilliseconds</div>
+                                <div class="text-sm text-gray-500">Time (ms)</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Tour Visualization Placeholder -->
+                        <div class="bg-gray-100 rounded-lg p-4 text-center">
+                            <canvas id="tourCanvas" width="600" height="400" class="mx-auto border rounded"></canvas>
+                            <p class="text-sm text-gray-600 mt-2">Tour Visualization</p>
+                        </div>
+                    </div>
+                }
+
+                <!-- Convergence Chart -->
+                @if (convergenceData.Count > 0)
+                {
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Convergence Chart</h3>
+                        <div class="bg-gray-100 rounded-lg p-4">
+                            <canvas id="convergenceChart" width="800" height="300" class="w-full"></canvas>
+                        </div>
+                    </div>
+                }
+
+                <!-- Execution Log -->
+                @if (executionLog.Count > 0)
+                {
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Execution Log</h3>
+                        <div class="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto">
+                            @foreach (var logEntry in executionLog.TakeLast(20))
+                            {
+                                <div class="text-green-400 text-sm font-mono">@logEntry</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private int cityCount = 20;
+    private City[]? cities;
+    private bool isGenerating;
+    private bool isSolving;
+    private AvailableStrategies? availableStrategies;
+    private GeneticAlgorithmConfig config = new GeneticAlgorithmConfig();
+    private GeneticAlgorithmResult? currentResult;
+    private List<double> convergenceData = new();
+    private List<string> executionLog = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load available strategies
+        availableStrategies = await ApiService.GetAvailableStrategiesAsync();
+        
+        // Start SignalR connection
+        await SignalRService.StartConnectionAsync();
+        SignalRService.SubscribeToResults(OnGAResultReceived);
+        
+        // Generate initial cities
+        await GenerateCities();
+    }
+
+    private async Task GenerateCities()
+    {
+        isGenerating = true;
+        StateHasChanged();
+        
+        cities = await ApiService.GenerateRandomCitiesAsync(cityCount, 42);
+        if (cities != null)
+        {
+            AddLogEntry($"Generated {cities.Length} cities");
+            await DrawCities();
+        }
+        
+        isGenerating = false;
+        StateHasChanged();
+    }
+
+    private async Task StartSolving()
+    {
+        if (cities == null || !config.IsValid()) return;
+        
+        isSolving = true;
+        convergenceData.Clear();
+        AddLogEntry($"Starting GA with {config.PopulationSize} population, {config.MaxGenerations} generations");
+        StateHasChanged();
+        
+        var success = await ApiService.StartTspSolvingAsync(cities, config, SignalRService.ConnectionId);
+        if (!success)
+        {
+            AddLogEntry("Failed to start solving");
+            isSolving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StopSolving()
+    {
+        isSolving = false;
+        AddLogEntry("Solving stopped");
+        StateHasChanged();
+    }
+
+    private async Task OnGAResultReceived(GeneticAlgorithmResult result)
+    {
+        currentResult = result;
+        convergenceData.Add(result.BestFitness);
+        
+        if (result.Generation % 10 == 0 || result.IsComplete)
+        {
+            AddLogEntry($"Gen {result.Generation}: Best={result.BestFitness:F4}, Avg={result.AverageFitness:F4}, Time={result.ElapsedMilliseconds}ms");
+        }
+        
+        if (result.IsComplete)
+        {
+            isSolving = false;
+            AddLogEntry($"Completed! Final best distance: {result.BestDistance:F2}");
+        }
+        
+        await InvokeAsync(() =>
+        {
+            StateHasChanged();
+            _ = Task.Run(async () =>
+            {
+                await DrawTour(result.BestTour);
+                await UpdateConvergenceChart();
+            });
+        });
+    }
+
+    private bool CanStartSolving()
+    {
+        return cities != null && cities.Length >= 3 && !isSolving && config.IsValid();
+    }
+
+    private string GetConnectionStatusClass()
+    {
+        return SignalRService.ConnectionState switch
+        {
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connected => "bg-green-500",
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connecting => "bg-yellow-500",
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Reconnecting => "bg-yellow-500",
+            _ => "bg-red-500"
+        };
+    }
+
+    private string GetConnectionStatusText()
+    {
+        return SignalRService.ConnectionState.ToString();
+    }
+
+    private void AddLogEntry(string message)
+    {
+        var timestamp = DateTime.Now.ToString("HH:mm:ss");
+        executionLog.Add($"[{timestamp}] {message}");
+    }    private async Task DrawCities()
+    {
+        if (cities == null) return;
+        
+        await JSRuntime.InvokeVoidAsync("drawCities", "tourCanvas", cities.Select(c => new { x = c.X, y = c.Y }).ToArray());
+    }
+
+    private async Task DrawTour(Tour tour)
+    {
+        if (cities == null) return;
+        
+        var tourPoints = tour.Cities.ToArray().Select(i => new { x = cities[i].X, y = cities[i].Y }).ToArray();
+        await JSRuntime.InvokeVoidAsync("drawTour", "tourCanvas", tourPoints);
+    }
+
+    private async Task UpdateConvergenceChart()
+    {
+        if (convergenceData.Count == 0) return;
+        
+        await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "convergenceChart", convergenceData.ToArray());
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        SignalRService.UnsubscribeFromResults(OnGAResultReceived);
+        await SignalRService.DisposeAsync();
+    }
+}

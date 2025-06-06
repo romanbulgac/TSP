@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Combined API and WebAssembly service
+  tsp-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - Logging__LogLevel__Default=Information
+      - Logging__LogLevel__Microsoft.AspNetCore=Warning
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Alternative: Separate API and WebAssembly services
+  # api:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     target: api
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - ASPNETCORE_ENVIRONMENT=Development
+  #     - ASPNETCORE_URLS=http://+:8080
+  #   volumes:
+  #     - ./logs:/app/logs
+  #   restart: unless-stopped
+
+  # web:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     target: wasm
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - api
+  #   restart: unless-stopped
+
+networks:
+  default:
+    name: tsp-lab-network
+
+volumes:
+  logs:
+    driver: local

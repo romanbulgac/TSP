@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TSP Lab - Genetic Algorithm Solver</title>
+    <base href="/" />
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#6366f1',
+                        accent: '#10b981',
+                        danger: '#ef4444',
+                        warning: '#f59e0b',
+                        success: '#10b981'
+                    },
+                    animation: {
+                        'spin-slow': 'spin 3s linear infinite',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Bootstrap (keeping for backward compatibility) -->
+    <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="TspLab.Web.styles.css" rel="stylesheet" />
+    
+    <!-- Custom Styles -->
+    <style>
+        .loading-progress {
+            position: relative;
+            display: block;
+            width: 8rem;
+            height: 8rem;
+            margin: 20vh auto 1rem auto;
+        }
+
+        .loading-progress circle {
+            fill: none;
+            stroke: #e0e7ff;
+            stroke-width: 0.6rem;
+            transform-origin: 50% 50%;
+            transform: rotate(-90deg);
+        }
+
+        .loading-progress circle:last-child {
+            stroke: #3b82f6;
+            stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
+            transition: stroke-dasharray 0.05s ease-in-out;
+        }
+
+        .loading-progress-text {
+            position: absolute;
+            text-align: center;
+            font-weight: bold;
+            inset: calc(20vh + 3.25rem) 0 auto 0.2rem;
+            color: #3b82f6;
+        }
+
+        .loading-progress-text:after {
+            content: var(--blazor-load-percentage-text, "Loading");
+        }
+
+        #blazor-error-ui {
+            background: #fee2e2;
+            border: 1px solid #fca5a5;
+            border-radius: 0.5rem;
+            bottom: 0;
+            box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+            display: none;
+            left: 0;
+            padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+            position: fixed;
+            width: 100%;
+            z-index: 1000;
+            color: #991b1b;
+        }
+
+        #blazor-error-ui .dismiss {
+            cursor: pointer;
+            position: absolute;
+            right: 0.75rem;
+            top: 0.5rem;
+        }
+
+        .canvas-container {
+            position: relative;
+            overflow: hidden;
+            border-radius: 0.5rem;
+        }
+
+        canvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>    <div id="blazor-error-ui">
+        <div class="flex items-center justify-between">
+            <span class="font-medium">An unhandled error has occurred.</span>
+            <div class="flex space-x-2">
+                <a href="" class="reload px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors text-sm">Reload</a>
+                <a class="dismiss px-2 py-1 text-red-600 hover:text-red-800 cursor-pointer text-lg">×</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Custom TSP Visualization JavaScript -->
+    <script src="js/tsp-visualization.js"></script>
+    <!-- Blazor WebAssembly -->
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+
+</html>
