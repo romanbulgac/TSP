@@ -343,4 +343,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 Built with ❤️ using Clean Architecture, ASP.NET Core 8, and Blazor WebAssembly.
-# TSP
