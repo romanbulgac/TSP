@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Combined API and WebAssembly service
   tsp-app:
@@ -8,18 +6,21 @@ services:
       dockerfile: Dockerfile
       target: api
     ports:
-      - "8080:8080"
-      - "8081:8081"
+      - "5001:5001"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ASPNETCORE_URLS=http://+:8080
+      - ASPNETCORE_URLS=http://+:5001
+      - ASPNETCORE_HTTPS_PORT=
+      - ASPNETCORE_HTTPS_PORTS=
+      - ASPNETCORE_HTTP_PORT=5001
+      - DOTNET_RUNNING_IN_CONTAINER=true
       - Logging__LogLevel__Default=Information
       - Logging__LogLevel__Microsoft.AspNetCore=Warning
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -31,10 +32,10 @@ services:
   #     dockerfile: Dockerfile
   #     target: api
   #   ports:
-  #     - "8080:8080"
+  #     - "5001:5001"
   #   environment:
   #     - ASPNETCORE_ENVIRONMENT=Development
-  #     - ASPNETCORE_URLS=http://+:8080
+  #     - ASPNETCORE_URLS=http://+:5001
   #   volumes:
   #     - ./logs:/app/logs
   #   restart: unless-stopped

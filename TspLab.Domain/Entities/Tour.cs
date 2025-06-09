@@ -59,7 +59,13 @@ public sealed class Tour : IEquatable<Tour>
     /// <summary>
     /// Creates a copy of this tour
     /// </summary>
-    public Tour Clone() => new(_cities);
+    public Tour Clone() 
+    {
+        var clone = new Tour(_cities);
+        clone._fitness = _fitness;
+        clone._distance = _distance;
+        return clone;
+    }
 
     /// <summary>
     /// Swaps two cities in the tour

@@ -1,0 +1,670 @@
+@page "/benchmark"
+@using TspLab.Domain.Entities
+@using TspLab.Domain.Models
+@using TspLab.Web.Services
+@using Microsoft.JSInterop
+@inject TspApiService ApiService
+@inject SignalRService SignalRService
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<PageTitle>TSP Benchmark - Algorithm Comparison</PageTitle>
+
+<div class="min-h-screen bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center">
+                    <h1 class="text-2xl font-bold text-gray-900">TSP Benchmark</h1>
+                    <span class="ml-3 px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full">
+                        Algorithm Comparison
+                    </span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center">
+                        <div class="w-2 h-2 rounded-full @GetConnectionStatusClass()"></div>
+                        <span class="ml-2 text-sm text-gray-600">@GetConnectionStatusText()</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
+            
+            <!-- Configuration Panel -->
+            <div class="xl:col-span-1">
+                <div class="bg-white rounded-lg shadow-sm border p-6 sticky top-8">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-6">Benchmark Configuration</h2>
+                    
+                    <!-- Test Problems -->
+                    <div class="space-y-6">
+                        <div class="border rounded-lg p-4">
+                            <h3 class="font-medium text-gray-900 mb-3">Test Problems</h3>
+                            <div class="space-y-3">
+                                @foreach (var problem in testProblems)
+                                {
+                                    <label class="flex items-center">
+                                        <input type="checkbox" @bind="problem.IsSelected" 
+                                               class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                        <span class="ml-2 text-sm">@problem.Name (@problem.CityCount cities)</span>
+                                    </label>
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Algorithm Configurations -->
+                        <div class="border rounded-lg p-4">
+                            <h3 class="font-medium text-gray-900 mb-3">Algorithm Variants</h3>
+                            <div class="space-y-3">
+                                @if (availableStrategies.HasValue)
+                                {
+                                    @foreach (var config in algorithmConfigs)
+                                    {
+                                        <label class="flex items-center">
+                                            <input type="checkbox" @bind="config.IsSelected" 
+                                                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                            <span class="ml-2 text-sm">@config.Name</span>
+                                        </label>
+                                    }
+                                }
+                            </div>
+                        </div>
+
+                        <!-- Benchmark Parameters -->
+                        <div class="border rounded-lg p-4">
+                            <h3 class="font-medium text-gray-900 mb-3">Benchmark Settings</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Runs per Configuration</label>
+                                    <input @bind="runsPerConfig" type="number" min="1" max="10"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Max Generations</label>
+                                    <input @bind="maxGenerations" type="number" min="50" max="1000"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Population Size</label>
+                                    <input @bind="populationSize" type="number" min="20" max="200"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Control Buttons -->
+                        <div class="space-y-2">
+                            <button @onclick="StartBenchmark" disabled="@(!CanStartBenchmark())"
+                                    class="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                @if (isBenchmarking) { <span>Running Benchmark...</span> } else { <span>Start Benchmark</span> }
+                            </button>
+                            <button @onclick="StopBenchmark" disabled="@(!isBenchmarking)"
+                                    class="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
+                                Stop Benchmark
+                            </button>
+                            <button @onclick="ClearResults" disabled="@isBenchmarking"
+                                    class="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50">
+                                Clear Results
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results and Visualization -->
+            <div class="xl:col-span-3">
+                <div class="space-y-6">
+                    
+                    <!-- Progress Indicator -->
+                    @if (isBenchmarking)
+                    {
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Benchmark Progress</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between text-sm">
+                                    <span>@currentBenchmarkStatus</span>
+                                    <span>@benchmarkProgress.ToString("P0")</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                    <div class="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                                         style="width: @(benchmarkProgress * 100)%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Results Summary -->
+                    @if (benchmarkResults.Any())
+                    {
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Benchmark Results Summary</h3>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Algorithm</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Problem</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Best Distance</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Distance</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Time (s)</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Success Rate</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        @foreach (var result in benchmarkResults.OrderBy(r => r.AverageDistance))
+                                        {
+                                            <tr class="hover:bg-gray-50">
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">@result.AlgorithmName</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">@result.ProblemName</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">@result.BestDistance.ToString("F2")</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">@result.AverageDistance.ToString("F2")</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">@result.AverageTime.ToString("F2")</td>
+                                                <td class="px-6 py-4 whitespace-nowrap">
+                                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full @GetSuccessRateClass(result.SuccessRate)">
+                                                        @result.SuccessRate.ToString("P0")
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Comparison Charts -->
+                    @if (benchmarkResults.Any())
+                    {
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <div class="bg-white rounded-lg shadow-sm border p-6">
+                                <h3 class="text-lg font-semibold text-gray-900 mb-4">Distance Comparison</h3>
+                                <canvas id="distanceComparisonChart" width="400" height="300" 
+                                        class="w-full h-auto"></canvas>
+                            </div>
+                            
+                            <div class="bg-white rounded-lg shadow-sm border p-6">
+                                <h3 class="text-lg font-semibold text-gray-900 mb-4">Time Comparison</h3>
+                                <canvas id="timeComparisonChart" width="400" height="300" 
+                                        class="w-full h-auto"></canvas>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Detailed Results -->
+                    @if (detailedResults.Any())
+                    {
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Detailed Run Results</h3>
+                            <div class="space-y-4">
+                                @foreach (var group in detailedResults.GroupBy(r => r.AlgorithmName))
+                                {
+                                    <div class="border rounded-lg p-4">
+                                        <h4 class="font-medium text-gray-900 mb-2">@group.Key</h4>
+                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                            @foreach (var result in group)
+                                            {
+                                                <div class="flex justify-between">
+                                                    <span class="text-gray-600">@result.ProblemName Run @result.RunNumber:</span>
+                                                    <span class="font-mono">@result.FinalDistance.ToString("F2")</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Benchmark Log -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Benchmark Log</h3>
+                        <div class="h-40 overflow-y-auto bg-gray-50 rounded border p-3 font-mono text-xs">
+                            @if (benchmarkLog.Any())
+                            {
+                                @foreach (var entry in benchmarkLog.TakeLast(50))
+                                {
+                                    <div class="text-gray-700">@entry</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="text-gray-500">No benchmark log entries yet...</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private AvailableStrategies? availableStrategies;
+    private bool isBenchmarking = false;
+    private double benchmarkProgress = 0.0;
+    private string currentBenchmarkStatus = "";
+    
+    private int runsPerConfig = 3;
+    private int maxGenerations = 200;
+    private int populationSize = 50;
+
+    private List<TestProblem> testProblems = new();
+    private List<AlgorithmConfig> algorithmConfigs = new();
+    private List<BenchmarkResult> benchmarkResults = new();
+    private List<DetailedResult> detailedResults = new();
+    private List<string> benchmarkLog = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            availableStrategies = await ApiService.GetAvailableStrategiesAsync();
+            await SignalRService.StartConnectionAsync();
+            SignalRService.SubscribeToResults(OnGAResultReceived);
+            
+            InitializeTestProblems();
+            InitializeAlgorithmConfigs();
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Initialization error: {ex.Message}");
+        }
+    }
+
+    private void InitializeTestProblems()
+    {
+        testProblems = new List<TestProblem>
+        {
+            new TestProblem { Name = "Small Random", CityCount = 10, IsSelected = true },
+            new TestProblem { Name = "Medium Random", CityCount = 20, IsSelected = true },
+            new TestProblem { Name = "Large Random", CityCount = 50, IsSelected = false },
+            new TestProblem { Name = "Small Circular", CityCount = 15, IsSelected = true },
+            new TestProblem { Name = "Medium Circular", CityCount = 30, IsSelected = false },
+            new TestProblem { Name = "Small Clustered", CityCount = 25, IsSelected = false }
+        };
+    }
+
+    private void InitializeAlgorithmConfigs()
+    {
+        if (!availableStrategies.HasValue) return;
+
+        algorithmConfigs = new List<AlgorithmConfig>();
+
+        foreach (var crossover in availableStrategies.Value.Crossovers)
+        {
+            foreach (var mutation in availableStrategies.Value.Mutations.Take(2)) // Limit combinations
+            {
+                algorithmConfigs.Add(new AlgorithmConfig
+                {
+                    Name = $"{crossover} + {mutation}",
+                    CrossoverName = crossover,
+                    MutationName = mutation,
+                    IsSelected = algorithmConfigs.Count < 4 // Select first 4 by default
+                });
+            }
+        }
+    }
+
+    private async Task StartBenchmark()
+    {
+        if (isBenchmarking) return;
+
+        isBenchmarking = true;
+        benchmarkProgress = 0.0;
+        benchmarkResults.Clear();
+        detailedResults.Clear();
+        
+        var selectedProblems = testProblems.Where(p => p.IsSelected).ToList();
+        var selectedConfigs = algorithmConfigs.Where(c => c.IsSelected).ToList();
+        
+        var totalRuns = selectedProblems.Count * selectedConfigs.Count * runsPerConfig;
+        var completedRuns = 0;
+
+        AddLogEntry($"Starting benchmark: {selectedProblems.Count} problems × {selectedConfigs.Count} algorithms × {runsPerConfig} runs = {totalRuns} total runs");
+
+        try
+        {
+            foreach (var problem in selectedProblems)
+            {
+                var cities = await GenerateProblemCities(problem);
+                
+                foreach (var algorithmConfig in selectedConfigs)
+                {
+                    var results = new List<double>();
+                    var times = new List<double>();
+                    
+                    for (int run = 1; run <= runsPerConfig; run++)
+                    {
+                        currentBenchmarkStatus = $"Running {problem.Name} with {algorithmConfig.Name} (Run {run}/{runsPerConfig})";
+                        StateHasChanged();
+
+                        var config = new GeneticAlgorithmConfig
+                        {
+                            PopulationSize = populationSize,
+                            MaxGenerations = maxGenerations,
+                            MutationRate = 0.02,
+                            ElitismRate = 0.1,
+                            CrossoverName = algorithmConfig.CrossoverName,
+                            MutationName = algorithmConfig.MutationName
+                        };
+
+                        var startTime = DateTime.Now;
+                        var bestDistance = await RunSingleBenchmark(cities, config);
+                        var endTime = DateTime.Now;
+                        var duration = (endTime - startTime).TotalSeconds;
+
+                        results.Add(bestDistance);
+                        times.Add(duration);
+                        
+                        detailedResults.Add(new DetailedResult
+                        {
+                            AlgorithmName = algorithmConfig.Name,
+                            ProblemName = problem.Name,
+                            RunNumber = run,
+                            FinalDistance = bestDistance,
+                            TimeSeconds = duration
+                        });
+
+                        completedRuns++;
+                        benchmarkProgress = (double)completedRuns / totalRuns;
+                        
+                        AddLogEntry($"Completed {problem.Name} with {algorithmConfig.Name} run {run}: {bestDistance:F2}");
+                        
+                        if (!isBenchmarking) break; // Check for cancellation
+                    }
+
+                    if (!isBenchmarking) break;
+
+                    // Calculate statistics for this algorithm-problem combination
+                    var benchmarkResult = new BenchmarkResult
+                    {
+                        AlgorithmName = algorithmConfig.Name,
+                        ProblemName = problem.Name,
+                        BestDistance = results.Min(),
+                        AverageDistance = results.Average(),
+                        WorstDistance = results.Max(),
+                        AverageTime = times.Average(),
+                        SuccessRate = CalculateSuccessRate(results, results.Min() * 1.1) // Within 10% of best
+                    };
+
+                    benchmarkResults.Add(benchmarkResult);
+                }
+
+                if (!isBenchmarking) break;
+            }
+
+            if (isBenchmarking)
+            {
+                AddLogEntry($"Benchmark completed! Total runs: {completedRuns}");
+                await UpdateCharts();
+            }
+            else
+            {
+                AddLogEntry("Benchmark cancelled by user");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Benchmark error: {ex.Message}");
+        }
+        finally
+        {
+            isBenchmarking = false;
+            benchmarkProgress = 1.0;
+            currentBenchmarkStatus = "Benchmark completed";
+            StateHasChanged();
+        }
+    }
+
+    private async Task<City[]> GenerateProblemCities(TestProblem problem)
+    {
+        return problem.Name.Contains("Circular") ? 
+            await GenerateCircularCities(problem.CityCount) :
+            problem.Name.Contains("Clustered") ?
+            await GenerateClusteredCities(problem.CityCount) :
+            await ApiService.GenerateRandomCitiesAsync(problem.CityCount) ?? new City[0];
+    }
+
+    private Task<City[]> GenerateCircularCities(int count)
+    {
+        var cities = new City[count];
+        var centerX = 200;
+        var centerY = 200;
+        var radius = 150;
+        var random = new Random();
+        
+        for (int i = 0; i < count; i++)
+        {
+            var angle = 2 * Math.PI * i / count;
+            var x = centerX + radius * Math.Cos(angle) + random.Next(-5, 6);
+            var y = centerY + radius * Math.Sin(angle) + random.Next(-5, 6);
+            cities[i] = new City(i, $"City{i}", x, y);
+        }
+        
+        return Task.FromResult(cities);
+    }
+
+    private Task<City[]> GenerateClusteredCities(int count)
+    {
+        var cities = new City[count];
+        var random = new Random();
+        var clusterCount = Math.Max(2, count / 8);
+        var citiesPerCluster = count / clusterCount;
+        var cityIndex = 0;
+        
+        for (int cluster = 0; cluster < clusterCount; cluster++)
+        {
+            var clusterCenterX = random.Next(50, 350);
+            var clusterCenterY = random.Next(50, 350);
+            var clusterRadius = random.Next(20, 60);
+            
+            var citiesInThisCluster = (cluster == clusterCount - 1) ? 
+                count - cityIndex : citiesPerCluster;
+            
+            for (int i = 0; i < citiesInThisCluster; i++)
+            {
+                var angle = random.NextDouble() * 2 * Math.PI;
+                var distance = random.NextDouble() * clusterRadius;
+                var x = clusterCenterX + distance * Math.Cos(angle);
+                var y = clusterCenterY + distance * Math.Sin(angle);
+                
+                cities[cityIndex++] = new City(cityIndex - 1, $"City{cityIndex - 1}", x, y);
+            }
+        }
+        
+        return Task.FromResult(cities);
+    }
+
+    private async Task<double> RunSingleBenchmark(City[] cities, GeneticAlgorithmConfig config)
+    {
+        var tcs = new TaskCompletionSource<double>();
+        GeneticAlgorithmResult? lastResult = null;
+
+        Task resultHandler(GeneticAlgorithmResult result)
+        {
+            lastResult = result;
+            if (result.IsComplete)
+            {
+                tcs.SetResult(result.BestDistance);
+            }
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            SignalRService.SubscribeToResults(resultHandler);
+            await ApiService.StartTspSolvingAsync(cities, config, SignalRService.ConnectionId);
+            
+            // Wait for completion or timeout (60 seconds)
+            var result = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(60));
+            return result;
+        }
+        catch (TimeoutException)
+        {
+            // TODO: Implement stop endpoint in API
+            return lastResult?.BestDistance ?? double.MaxValue;
+        }
+        finally
+        {
+            SignalRService.UnsubscribeFromResults(resultHandler);
+        }
+    }
+
+    private double CalculateSuccessRate(List<double> results, double threshold)
+    {
+        var successfulRuns = results.Count(r => r <= threshold);
+        return (double)successfulRuns / results.Count;
+    }
+
+    private async Task StopBenchmark()
+    {
+        if (!isBenchmarking) return;
+        
+        isBenchmarking = false;
+        try
+        {
+            // TODO: Implement stop endpoint in API
+            AddLogEntry("Stop functionality not yet implemented in API");
+        }
+        catch { /* Ignore */ }
+        
+        AddLogEntry("Benchmark stopped by user");
+        StateHasChanged();
+    }
+
+    private void ClearResults()
+    {
+        benchmarkResults.Clear();
+        detailedResults.Clear();
+        benchmarkLog.Clear();
+        benchmarkProgress = 0.0;
+        currentBenchmarkStatus = "";
+        StateHasChanged();
+    }
+
+    private bool CanStartBenchmark()
+    {
+        return !isBenchmarking && 
+               testProblems.Any(p => p.IsSelected) && 
+               algorithmConfigs.Any(c => c.IsSelected) &&
+               availableStrategies.HasValue;
+    }
+
+    private string GetSuccessRateClass(double rate)
+    {
+        return rate switch
+        {
+            >= 0.8 => "bg-green-100 text-green-800",
+            >= 0.6 => "bg-yellow-100 text-yellow-800",
+            >= 0.4 => "bg-orange-100 text-orange-800",
+            _ => "bg-red-100 text-red-800"
+        };
+    }
+
+    private string GetConnectionStatusClass()
+    {
+        return SignalRService.ConnectionState switch
+        {
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connected => "bg-green-500",
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connecting => "bg-yellow-500",
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Reconnecting => "bg-yellow-500",
+            _ => "bg-red-500"
+        };
+    }
+
+    private string GetConnectionStatusText()
+    {
+        return SignalRService.ConnectionState.ToString();
+    }
+
+    private void AddLogEntry(string message)
+    {
+        var timestamp = DateTime.Now.ToString("HH:mm:ss");
+        benchmarkLog.Add($"[{timestamp}] {message}");
+        StateHasChanged();
+    }
+
+    private Task OnGAResultReceived(GeneticAlgorithmResult result)
+    {
+        // Results are handled in RunSingleBenchmark
+        return Task.CompletedTask;
+    }
+
+    private async Task UpdateCharts()
+    {
+        if (!benchmarkResults.Any()) return;
+        
+        try
+        {
+            // Update distance comparison chart
+            var distanceData = benchmarkResults.GroupBy(r => r.AlgorithmName)
+                .Select(g => new { 
+                    algorithm = g.Key, 
+                    avgDistance = g.Average(r => r.AverageDistance),
+                    bestDistance = g.Min(r => r.BestDistance)
+                }).ToArray();
+            
+            await JSRuntime.InvokeVoidAsync("updateBenchmarkChart", "distanceComparisonChart", distanceData, "Distance");
+            
+            // Update time comparison chart
+            var timeData = benchmarkResults.GroupBy(r => r.AlgorithmName)
+                .Select(g => new { 
+                    algorithm = g.Key, 
+                    avgTime = g.Average(r => r.AverageTime)
+                }).ToArray();
+            
+            await JSRuntime.InvokeVoidAsync("updateBenchmarkChart", "timeComparisonChart", timeData, "Time (s)");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Chart update error: {ex.Message}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        SignalRService.UnsubscribeFromResults(OnGAResultReceived);
+        await SignalRService.DisposeAsync();
+    }
+
+    // Helper classes
+    public class TestProblem
+    {
+        public string Name { get; set; } = "";
+        public int CityCount { get; set; }
+        public bool IsSelected { get; set; }
+    }
+
+    public class AlgorithmConfig
+    {
+        public string Name { get; set; } = "";
+        public string CrossoverName { get; set; } = "";
+        public string MutationName { get; set; } = "";
+        public bool IsSelected { get; set; }
+    }
+
+    public class BenchmarkResult
+    {
+        public string AlgorithmName { get; set; } = "";
+        public string ProblemName { get; set; } = "";
+        public double BestDistance { get; set; }
+        public double AverageDistance { get; set; }
+        public double WorstDistance { get; set; }
+        public double AverageTime { get; set; }
+        public double SuccessRate { get; set; }
+    }
+
+    public class DetailedResult
+    {
+        public string AlgorithmName { get; set; } = "";
+        public string ProblemName { get; set; } = "";
+        public int RunNumber { get; set; }
+        public double FinalDistance { get; set; }
+        public double TimeSeconds { get; set; }
+    }
+}

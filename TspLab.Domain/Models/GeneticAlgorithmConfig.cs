@@ -78,17 +78,17 @@ public class GeneticAlgorithmConfig
     /// <summary>
     /// Name of the crossover strategy to use
     /// </summary>
-    public string CrossoverName { get; set; } = "Order";
+    public string CrossoverName { get; set; } = "OrderCrossover";
 
     /// <summary>
     /// Name of the mutation strategy to use
     /// </summary>
-    public string MutationName { get; set; } = "Swap";
+    public string MutationName { get; set; } = "SwapMutation";
 
     /// <summary>
     /// Name of the fitness function to use
     /// </summary>
-    public string FitnessFunctionName { get; set; } = "TotalDistance";
+    public string FitnessFunctionName { get; set; } = "DistanceFitness";
 
     /// <summary>
     /// Validates the configuration parameters

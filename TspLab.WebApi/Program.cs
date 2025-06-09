@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.StaticFiles;
 using Serilog;
 using TspLab.Application.Services;
 using TspLab.Infrastructure.Extensions;
 using TspLab.WebApi.Hubs;
 using TspLab.WebApi.Models;
+using TspLab.Domain.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,10 +30,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorWasm", policy =>
     {
-        policy.WithOrigins("https://localhost:5001", "http://localhost:5000")
+        policy.AllowAnyOrigin()
               .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
+              .AllowAnyHeader();
     });
 });
 
@@ -47,8 +48,39 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// Only use HTTPS redirection in non-Docker environments
+if (!Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true)
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseCors("BlazorWasm");
+
+// Serve static files for Blazor WebAssembly with proper MIME types
+var provider = new FileExtensionContentTypeProvider();
+provider.Mappings[".dat"] = "application/octet-stream";
+provider.Mappings[".json"] = "application/json";
+provider.Mappings[".pdb"] = "application/octet-stream";
+provider.Mappings[".wasm"] = "application/wasm";
+provider.Mappings[".blat"] = "application/octet-stream";
+provider.Mappings[".dll"] = "application/octet-stream";
+provider.Mappings[".br"] = "application/x-brotli";
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = provider,
+    OnPrepareResponse = ctx =>
+    {
+        // Enable caching for static assets
+        var path = ctx.File.Name.ToLowerInvariant();
+        if (path.Contains("_framework/") || path.EndsWith(".css") || path.EndsWith(".js"))
+        {
+            ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+        }
+    }
+});
+
+app.UseRouting();
 
 // Map SignalR hub
 app.MapHub<TspHub>("/tspHub");
@@ -71,12 +103,15 @@ api.MapPost("/cities/generate", GenerateCities)
    .WithName("GenerateCities")
    .WithSummary("Generate random cities for testing");
 
+// Fallback to index.html for client-side routing (only for non-API routes)
+app.MapFallbackToFile("index.html");
+
 app.Run();
 
 /// <summary>
 /// Gets available genetic algorithm strategies
 /// </summary>
-static async Task<IResult> GetAvailableStrategies(TspSolverService solverService)
+static IResult GetAvailableStrategies(TspSolverService solverService)
 {
     try
     {
@@ -98,18 +133,20 @@ static async Task<IResult> SolveTsp(
     TspSolverService solverService,
     IHubContext<TspHub> hubContext,
     CancellationToken cancellationToken)
-{
-    try
+{    try
     {
         if (request.Cities == null || request.Cities.Length < 3)
             return Results.BadRequest("At least 3 cities are required");
 
-        if (!request.Config.IsValid())
+        // Use default config if none provided
+        var config = request.Config ?? GeneticAlgorithmConfig.Default;
+
+        if (!config.IsValid())
             return Results.BadRequest("Invalid configuration");
 
         var connectionId = request.ConnectionId ?? "all";
         
-        await foreach (var result in solverService.SolveAsync(request.Cities, request.Config, cancellationToken))
+        await foreach (var result in solverService.SolveAsync(request.Cities, config, cancellationToken))
         {
             // Send result to specific connection or all connections
             if (connectionId == "all")

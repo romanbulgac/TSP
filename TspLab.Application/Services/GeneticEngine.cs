@@ -91,8 +91,8 @@ public sealed class GeneticEngine
                 Generation: generation,
                 BestFitness: bestTour.Fitness,
                 AverageFitness: avgFitness,
-                BestTour: bestTour.Clone(),
-                BestDistance: fitnessFunction.CalculateDistance(bestTour, cities),
+                BestTour: bestTour.Cities.ToArray(),
+                BestDistance: bestTour.Distance,
                 ElapsedMilliseconds: stopwatch.ElapsedMilliseconds,
                 IsComplete: false
             );
@@ -106,8 +106,8 @@ public sealed class GeneticEngine
             Generation: config.MaxGenerations,
             BestFitness: bestTour.Fitness,
             AverageFitness: population.Average(t => t.Fitness),
-            BestTour: bestTour,
-            BestDistance: fitnessFunction.CalculateDistance(bestTour, cities),
+            BestTour: bestTour.Cities.ToArray(),
+            BestDistance: bestTour.Distance,
             ElapsedMilliseconds: stopwatch.ElapsedMilliseconds,
             IsComplete: true
         );
@@ -151,8 +151,8 @@ public sealed class GeneticEngine
         {
             Parallel.ForEach(population, tour =>
             {
-                tour.Fitness = fitnessFunction.CalculateFitness(tour, cities);
-                tour.Distance = fitnessFunction.CalculateDistance(tour, cities);
+                tour.Fitness = fitnessFunction.CalculateFitness(tour, cities.AsSpan());
+                tour.Distance = fitnessFunction.CalculateDistance(tour, cities.AsSpan());
             });
         });
     }

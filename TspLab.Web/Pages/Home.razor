@@ -146,10 +146,8 @@
                             </div>
                             <div class="text-center">
                                 <div class="text-2xl font-bold text-green-600">@currentResult.Value.BestDistance.ToString("F2")</div>
-                                <div class="text-sm text-gray-500">Distance</div>
-                            </div>
-                            <div class="text-center">
-                                <div class="text-2xl font-bold text-purple-600">@currentResult.Value.BestFitness.ToString("F4")</div>
+                                <div class="text-sm text-gray-500">Distance</div>                            </div>                            <div class="text-center">
+                                <div class="text-2xl font-bold text-purple-600">@(currentResult.Value.BestFitness > 0 ? currentResult.Value.BestFitness.ToString("F2") : "0.00")</div>
                                 <div class="text-sm text-gray-500">Fitness</div>
                             </div>
                             <div class="text-center">
@@ -204,9 +202,7 @@
     private GeneticAlgorithmConfig config = new GeneticAlgorithmConfig();
     private GeneticAlgorithmResult? currentResult;
     private List<double> convergenceData = new();
-    private List<string> executionLog = new();
-
-    protected override async Task OnInitializedAsync()
+    private List<string> executionLog = new();    protected override async Task OnInitializedAsync()
     {
         // Load available strategies
         availableStrategies = await ApiService.GetAvailableStrategiesAsync();
@@ -217,30 +213,79 @@
         
         // Generate initial cities
         await GenerateCities();
-    }
-
-    private async Task GenerateCities()
+    }    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try 
+            {  
+                // Wait for JavaScript and DOM to be fully ready
+                await Task.Delay(500);
+                
+                // Test if visualization functions are available
+                var functionsReady = await JSRuntime.InvokeAsync<bool>("eval", 
+                    "typeof drawCities === 'function' && typeof drawTour === 'function' && typeof updateConvergenceChart === 'function'");
+                
+                if (functionsReady)
+                {
+                    AddLogEntry("TSP visualization functions loaded successfully");
+                    
+                    // Draw initial cities if available
+                    if (cities != null && cities.Length > 0)
+                    {
+                        await DrawCities();
+                        AddLogEntry("Initial cities drawn");
+                    }
+                }
+                else
+                {
+                    AddLogEntry("ERROR: TSP visualization functions not ready");
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLogEntry($"Error initializing visualization: {ex.Message}");
+            }
+        }
+    }private async Task GenerateCities()
     {
         isGenerating = true;
         StateHasChanged();
         
-        cities = await ApiService.GenerateRandomCitiesAsync(cityCount, 42);
-        if (cities != null)
+        var randomSeed = Random.Shared.Next();
+        AddLogEntry($"Starting city generation for {cityCount} cities with seed {randomSeed}...");
+        
+        try
         {
-            AddLogEntry($"Generated {cities.Length} cities");
-            await DrawCities();
+            cities = await ApiService.GenerateRandomCitiesAsync(cityCount, randomSeed);
+            if (cities != null)
+            {
+                AddLogEntry($"Generated {cities.Length} cities successfully");
+                await DrawCities();
+                AddLogEntry("Cities drawn on canvas");
+            }
+            else
+            {
+                AddLogEntry("ERROR: Failed to generate cities - null response");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"ERROR generating cities: {ex.Message}");
         }
         
         isGenerating = false;
         StateHasChanged();
-    }
-
-    private async Task StartSolving()
+    }    private async Task StartSolving()
     {
         if (cities == null || !config.IsValid()) return;
         
         isSolving = true;
         convergenceData.Clear();
+        
+        // Clear the convergence chart
+        await ClearConvergenceChart();
+        
         AddLogEntry($"Starting GA with {config.PopulationSize} population, {config.MaxGenerations} generations");
         StateHasChanged();
         
@@ -260,20 +305,47 @@
         StateHasChanged();
     }
 
-    private async Task OnGAResultReceived(GeneticAlgorithmResult result)
+    private async Task ClearConvergenceChart()
+    {
+        try
+        {
+            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof clearConvergenceChart === 'function'");
+            if (functionAvailable)
+            {
+                await JSRuntime.InvokeVoidAsync("clearConvergenceChart");
+                AddLogEntry("Convergence chart cleared");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error clearing convergence chart: {ex.Message}");
+        }
+    }    private async Task OnGAResultReceived(GeneticAlgorithmResult result)
     {
         currentResult = result;
         convergenceData.Add(result.BestFitness);
         
+        // Debug information
+        AddLogEntry($"Received result: Gen={result.Generation}, Fitness={result.BestFitness:F4}, Distance={result.BestDistance:F2}");
+        
         if (result.Generation % 10 == 0 || result.IsComplete)
         {
-            AddLogEntry($"Gen {result.Generation}: Best={result.BestFitness:F4}, Avg={result.AverageFitness:F4}, Time={result.ElapsedMilliseconds}ms");
+            AddLogEntry($"Gen {result.Generation}: Best={result.BestFitness:F2}, Avg={result.AverageFitness:F2}, Time={result.ElapsedMilliseconds}ms");
+        }
+        
+        // Update chart every 5 generations or when complete for better performance
+        if (result.Generation % 5 == 0 || result.IsComplete)
+        {
+            await UpdateConvergenceChart();
         }
         
         if (result.IsComplete)
         {
             isSolving = false;
             AddLogEntry($"Completed! Final best distance: {result.BestDistance:F2}");
+            
+            // Final chart update with all data
+            await UpdateConvergenceChart();
         }
         
         await InvokeAsync(() =>
@@ -316,22 +388,116 @@
     {
         if (cities == null) return;
         
-        await JSRuntime.InvokeVoidAsync("drawCities", "tourCanvas", cities.Select(c => new { x = c.X, y = c.Y }).ToArray());
-    }
-
-    private async Task DrawTour(Tour tour)
+        try 
+        {
+            // Check if the function is available
+            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof drawCities === 'function'");
+            if (!functionAvailable)
+            {
+                AddLogEntry("ERROR: drawCities function not available");
+                return;
+            }
+            
+            // Check if canvas element exists
+            var canvasExists = await JSRuntime.InvokeAsync<bool>("eval", "document.getElementById('tourCanvas') !== null");
+            if (!canvasExists)
+            {
+                AddLogEntry("ERROR: tourCanvas element not found");
+                return;
+            }
+            
+            var cityData = cities.Select(c => new { x = c.X, y = c.Y }).ToArray();
+            await JSRuntime.InvokeVoidAsync("drawCities", "tourCanvas", cityData);
+            
+            AddLogEntry($"Successfully drew {cities.Length} cities");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error drawing cities: {ex.Message}");
+        }
+    }    private async Task DrawTour(int[] tour)
     {
         if (cities == null) return;
         
-        var tourPoints = tour.Cities.ToArray().Select(i => new { x = cities[i].X, y = cities[i].Y }).ToArray();
-        await JSRuntime.InvokeVoidAsync("drawTour", "tourCanvas", tourPoints);
-    }
-
-    private async Task UpdateConvergenceChart()
+        try 
+        {
+            // Check if the function is available
+            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof drawTour === 'function'");
+            if (!functionAvailable)
+            {
+                AddLogEntry("ERROR: drawTour function not available");
+                return;
+            }
+            
+            // Check if canvas element exists
+            var canvasExists = await JSRuntime.InvokeAsync<bool>("eval", "document.getElementById('tourCanvas') !== null");
+            if (!canvasExists)
+            {
+                AddLogEntry("ERROR: tourCanvas element not found");
+                return;
+            }
+            
+            var tourPoints = tour.Select(i => new { x = cities[i].X, y = cities[i].Y }).ToArray();
+            await JSRuntime.InvokeVoidAsync("drawTour", "tourCanvas", tourPoints);
+            
+            AddLogEntry($"Successfully drew tour with {tour.Length} cities");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error drawing tour: {ex.Message}");
+        }
+    }    private async Task UpdateConvergenceChart()
     {
         if (convergenceData.Count == 0) return;
         
-        await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "convergenceChart", convergenceData.ToArray());
+        try 
+        {
+            // Check if the function is available
+            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof updateConvergenceChart === 'function'");
+            if (!functionAvailable)
+            {
+                AddLogEntry("ERROR: updateConvergenceChart function not available");
+                return;
+            }
+            
+            // Check if canvas element exists
+            var canvasExists = await JSRuntime.InvokeAsync<bool>("eval", "document.getElementById('convergenceChart') !== null");
+            if (!canvasExists)
+            {
+                AddLogEntry("ERROR: convergenceChart element not found");
+                return;
+            }
+            
+            // Prepare data for the chart - ensure we have valid numeric values
+            var chartData = convergenceData
+                .Where(d => !double.IsNaN(d) && !double.IsInfinity(d) && d > 0)
+                .ToArray();
+            
+            if (chartData.Length == 0)
+            {
+                AddLogEntry("WARNING: No valid convergence data to display");
+                return;
+            }
+            
+            // Update the chart with validated data
+            await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "convergenceChart", chartData);
+            
+            // Calculate convergence statistics
+            var improvement = chartData.Length > 1 ? 
+                ((chartData.Last() - chartData.First()) / chartData.First() * 100) : 0;
+            var currentFitness = chartData.Last();
+            var estimatedDistance = currentFitness > 0 ? 1000.0 / currentFitness : 0;
+            
+            AddLogEntry($"Chart updated: {chartData.Length} points, Current fitness: {currentFitness:F4}, Distance: {estimatedDistance:F2}, Improvement: {improvement:F1}%");
+        }
+        catch (JSException jsEx)
+        {
+            AddLogEntry($"JavaScript error updating convergence chart: {jsEx.Message}");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error updating convergence chart: {ex.Message}");
+        }
     }
 
     public async ValueTask DisposeAsync()

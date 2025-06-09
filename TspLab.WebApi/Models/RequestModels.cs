@@ -11,7 +11,7 @@ namespace TspLab.WebApi.Models;
 /// <param name="ConnectionId">SignalR connection ID for targeted updates (optional)</param>
 public readonly record struct TspSolveRequest(
     City[] Cities,
-    GeneticAlgorithmConfig Config,
+    GeneticAlgorithmConfig? Config,
     string? ConnectionId = null);
 
 /// <summary>

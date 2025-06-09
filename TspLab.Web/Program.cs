@@ -11,7 +11,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 // Configure HTTP client for API calls
 builder.Services.AddScoped(sp => new HttpClient 
 { 
-    BaseAddress = new Uri("https://localhost:7001") // WebAPI URL
+    BaseAddress = new Uri("http://localhost:5001") // API server address
 });
 
 // Register application services

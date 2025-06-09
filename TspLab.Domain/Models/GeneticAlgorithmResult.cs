@@ -6,7 +6,7 @@ namespace TspLab.Domain.Models;
 /// <param name="Generation">Current generation number</param>
 /// <param name="BestFitness">Best fitness value in this generation</param>
 /// <param name="AverageFitness">Average fitness of the population</param>
-/// <param name="BestTour">Best tour found so far</param>
+/// <param name="BestTour">Best tour found so far as city indices</param>
 /// <param name="BestDistance">Distance of the best tour</param>
 /// <param name="ElapsedMilliseconds">Time elapsed since start</param>
 /// <param name="IsComplete">Whether the algorithm has completed</param>
@@ -14,7 +14,7 @@ public readonly record struct GeneticAlgorithmResult(
     int Generation,
     double BestFitness,
     double AverageFitness,
-    Tour BestTour,
+    int[] BestTour,
     double BestDistance,
     long ElapsedMilliseconds,
     bool IsComplete);

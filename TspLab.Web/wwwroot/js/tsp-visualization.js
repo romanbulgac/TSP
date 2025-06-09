@@ -2,6 +2,9 @@
 // Chart.js instance for convergence chart
 let convergenceChart = null;
 
+// Benchmark charts
+let benchmarkCharts = {};
+
 // Initialize Chart.js configuration
 function initializeChart(canvasId) {
     const ctx = document.getElementById(canvasId);
@@ -16,45 +19,109 @@ function initializeChart(canvasId) {
                 data: [],
                 borderColor: 'rgb(59, 130, 246)',
                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                borderWidth: 2,
-                tension: 0.1,
-                fill: true
+                borderWidth: 3,
+                tension: 0.2,
+                fill: true,
+                pointRadius: 2,
+                pointHoverRadius: 5
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: {
+                duration: 300,
+                easing: 'easeInOutQuart'
+            },
             scales: {
                 x: {
                     display: true,
                     title: {
                         display: true,
-                        text: 'Generation'
+                        text: 'Generation',
+                        color: '#374151',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(156, 163, 175, 0.3)'
+                    },
+                    ticks: {
+                        color: '#6B7280'
                     }
                 },
                 y: {
                     display: true,
                     title: {
                         display: true,
-                        text: 'Fitness (1/Distance)'
+                        text: 'Fitness (1000/Distance)',
+                        color: '#374151',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(156, 163, 175, 0.3)'
+                    },
+                    ticks: {
+                        color: '#6B7280',
+                        callback: function(value) {
+                            return value.toFixed(3);
+                        }
                     }
                 }
             },
             plugins: {
                 legend: {
                     display: true,
-                    position: 'top'
+                    position: 'top',
+                    labels: {
+                        color: '#374151',
+                        font: {
+                            size: 11,
+                            weight: '500'
+                        },
+                        usePointStyle: true,
+                        pointStyle: 'line'
+                    }
                 },
                 tooltip: {
                     enabled: true,
                     mode: 'index',
-                    intersect: false
+                    intersect: false,
+                    backgroundColor: 'rgba(55, 65, 81, 0.9)',
+                    titleColor: 'white',
+                    bodyColor: 'white',
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 1,
+                    callbacks: {
+                        title: function(context) {
+                            return 'Generation: ' + context[0].label;
+                        },
+                        label: function(context) {
+                            const value = context.parsed.y;
+                            const distance = (1000 / value).toFixed(2);
+                            return `${context.dataset.label}: ${value.toFixed(4)} (Distance: ${distance})`;
+                        }
+                    }
                 }
             },
             interaction: {
                 mode: 'nearest',
                 axis: 'x',
                 intersect: false
+            },
+            elements: {
+                line: {
+                    tension: 0.2
+                },
+                point: {
+                    hoverBackgroundColor: 'rgb(59, 130, 246)',
+                    hoverBorderColor: 'white'
+                }
             }
         }
     });
@@ -62,12 +129,19 @@ function initializeChart(canvasId) {
 
 // Draw cities on canvas
 function drawCities(canvasId, cities) {
+    console.log('drawCities called with:', canvasId, cities);
+    
     const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
+    if (!canvas) {
+        console.error('Canvas not found:', canvasId);
+        return;
+    }
     
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
     const height = canvas.height;
+    
+    console.log('Canvas dimensions:', width, height);
     
     // Clear canvas
     ctx.clearRect(0, 0, width, height);
@@ -81,7 +155,12 @@ function drawCities(canvasId, cities) {
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, width, height);
     
-    if (!cities || cities.length === 0) return;
+    if (!cities || cities.length === 0) {
+        console.log('No cities to draw');
+        return;
+    }
+    
+    console.log('Drawing', cities.length, 'cities');
     
     // Find bounds for scaling
     const padding = 50;
@@ -121,12 +200,19 @@ function drawCities(canvasId, cities) {
         ctx.textAlign = 'center';
         ctx.fillText(index.toString(), x, y - 10);
     });
+    
+    console.log('Cities drawn successfully');
 }
 
 // Draw tour on canvas
 function drawTour(canvasId, tourPoints) {
+    console.log('drawTour called with:', canvasId, tourPoints);
+    
     const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
+    if (!canvas) {
+        console.error('Canvas not found:', canvasId);
+        return;
+    }
     
     const ctx = canvas.getContext('2d');
     const width = canvas.width;
@@ -144,7 +230,12 @@ function drawTour(canvasId, tourPoints) {
     ctx.lineWidth = 2;
     ctx.strokeRect(0, 0, width, height);
     
-    if (!tourPoints || tourPoints.length === 0) return;
+    if (!tourPoints || tourPoints.length === 0) {
+        console.log('No tour points to draw');
+        return;
+    }
+    
+    console.log('Drawing tour with', tourPoints.length, 'points');
     
     // Find bounds for scaling
     const padding = 50;
@@ -220,22 +311,238 @@ function drawTour(canvasId, tourPoints) {
         ctx.textAlign = 'center';
         ctx.fillText('START', startPoint.x, startPoint.y + 20);
     }
+    
+    console.log('Tour drawn successfully');
 }
 
 // Update convergence chart
 function updateConvergenceChart(canvasId, data) {
+    console.log('updateConvergenceChart called with:', canvasId, data);
+    
     if (!convergenceChart) {
+        console.log('Initializing convergence chart...');
         convergenceChart = initializeChart(canvasId);
+        if (!convergenceChart) {
+            console.error('Failed to initialize convergence chart');
+            return;
+        }
     }
     
-    if (!convergenceChart || !data) return;
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        console.error('Invalid data for convergence chart:', data);
+        return;
+    }
     
-    // Update chart data
-    convergenceChart.data.labels = data.map((_, index) => index + 1);
-    convergenceChart.data.datasets[0].data = data.map(d => d.fitness);
+    // Handle both array of numbers and array of objects
+    let fitnessData;
+    if (typeof data[0] === 'number') {
+        // Array of numbers
+        fitnessData = data;
+    } else if (typeof data[0] === 'object' && data[0].fitness !== undefined) {
+        // Array of objects with fitness property
+        fitnessData = data.map(d => d.fitness);
+    } else {
+        console.error('Invalid data format for convergence chart. Expected numbers or objects with fitness property.');
+        return;
+    }
     
-    // Update chart
-    convergenceChart.update('none'); // No animation for real-time updates
+    console.log('Processing fitness data:', fitnessData);
+    
+    // Update chart data with generation labels
+    const generations = fitnessData.map((_, index) => index + 1);
+    convergenceChart.data.labels = generations;
+    convergenceChart.data.datasets[0].data = fitnessData;
+    
+    // Add average fitness line if we have enough data points
+    if (fitnessData.length > 10) {
+        const windowSize = Math.min(10, Math.floor(fitnessData.length / 4));
+        const movingAverage = calculateMovingAverage(fitnessData, windowSize);
+        
+        // Check if average dataset exists, if not create it
+        if (convergenceChart.data.datasets.length === 1) {
+            convergenceChart.data.datasets.push({
+                label: 'Moving Average',
+                data: movingAverage,
+                borderColor: 'rgb(16, 185, 129)',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderWidth: 2,
+                tension: 0.3,
+                fill: false,
+                pointRadius: 0
+            });
+        } else {
+            convergenceChart.data.datasets[1].data = movingAverage;
+        }
+    }
+    
+    // Add convergence detection and visual indicators
+    if (fitnessData.length > 20) {
+        const lastTenValues = fitnessData.slice(-10);
+        const convergenceThreshold = 0.001; // 0.1% change threshold
+        const isConverged = checkConvergence(lastTenValues, convergenceThreshold);
+        
+        if (isConverged) {
+            // Add convergence point annotation
+            addConvergenceAnnotation(convergenceChart, fitnessData.length - 10);
+        }
+    }
+    
+    // Smooth update with minimal animation for real-time updates
+    convergenceChart.update('none');
+    console.log('Chart updated successfully with', fitnessData.length, 'data points');
+}
+
+// Helper function to calculate moving average
+function calculateMovingAverage(data, windowSize) {
+    const result = [];
+    for (let i = 0; i < data.length; i++) {
+        const start = Math.max(0, i - windowSize + 1);
+        const window = data.slice(start, i + 1);
+        const average = window.reduce((sum, val) => sum + val, 0) / window.length;
+        result.push(average);
+    }
+    return result;
+}
+
+// Helper function to check convergence
+function checkConvergence(values, threshold) {
+    if (values.length < 2) return false;
+    
+    const maxValue = Math.max(...values);
+    const minValue = Math.min(...values);
+    const relativeChange = (maxValue - minValue) / maxValue;
+    
+    return relativeChange < threshold;
+}
+
+// Helper function to add convergence annotation
+function addConvergenceAnnotation(chart, convergencePoint) {
+    // Simple convergence indicator - change border color of the dataset
+    chart.data.datasets[0].borderColor = 'rgb(16, 185, 129)'; // Green when converged
+    
+    // Could be extended to add actual annotations if Chart.js annotation plugin is available
+    console.log('Convergence detected at generation:', convergencePoint);
+}
+
+// Clear convergence chart
+function clearConvergenceChart() {
+    if (convergenceChart) {
+        convergenceChart.data.labels = [];
+        convergenceChart.data.datasets.forEach(dataset => {
+            dataset.data = [];
+        });
+        
+        // Reset to original blue color
+        convergenceChart.data.datasets[0].borderColor = 'rgb(59, 130, 246)';
+        
+        // Remove moving average dataset if it exists
+        if (convergenceChart.data.datasets.length > 1) {
+            convergenceChart.data.datasets.splice(1, 1);
+        }
+        
+        convergenceChart.update();
+        console.log('Convergence chart cleared');
+    }
+}
+
+// Reset convergence chart (destroy and recreate)
+function resetConvergenceChart(canvasId) {
+    if (convergenceChart) {
+        convergenceChart.destroy();
+        convergenceChart = null;
+        console.log('Convergence chart destroyed');
+    }
+    
+    // Reinitialize if canvas exists
+    const canvas = document.getElementById(canvasId);
+    if (canvas) {
+        convergenceChart = initializeChart(canvasId);
+        console.log('Convergence chart reinitialized');
+    }
+}
+
+// Update benchmark comparison chart
+function updateBenchmarkChart(canvasId, data, yAxisLabel) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    
+    // Destroy existing chart if it exists
+    if (benchmarkCharts[canvasId]) {
+        benchmarkCharts[canvasId].destroy();
+    }
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Prepare data for Chart.js
+    const labels = data.map(d => d.algorithm);
+    const values = yAxisLabel === 'Distance' ? 
+        data.map(d => d.avgDistance) : 
+        data.map(d => d.avgTime);
+    
+    benchmarkCharts[canvasId] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: yAxisLabel,
+                data: values,
+                backgroundColor: [
+                    'rgba(59, 130, 246, 0.7)',
+                    'rgba(16, 185, 129, 0.7)',
+                    'rgba(245, 158, 11, 0.7)',
+                    'rgba(239, 68, 68, 0.7)',
+                    'rgba(139, 92, 246, 0.7)',
+                    'rgba(236, 72, 153, 0.7)'
+                ],
+                borderColor: [
+                    'rgb(59, 130, 246)',
+                    'rgb(16, 185, 129)',
+                    'rgb(245, 158, 11)',
+                    'rgb(239, 68, 68)',
+                    'rgb(139, 92, 246)',
+                    'rgb(236, 72, 153)'
+                ],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    display: true,
+                    title: {
+                        display: true,
+                        text: 'Algorithm'
+                    }
+                },
+                y: {
+                    display: true,
+                    title: {
+                        display: true,
+                        text: yAxisLabel
+                    },
+                    beginAtZero: true
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: true,
+                    callbacks: {
+                        label: function(context) {
+                            const value = yAxisLabel === 'Distance' ? 
+                                context.parsed.y.toFixed(2) : 
+                                context.parsed.y.toFixed(3) + 's';
+                            return yAxisLabel + ': ' + value;
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
 
 // Utility function to calculate distance between two points

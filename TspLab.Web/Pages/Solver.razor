@@ -1,0 +1,514 @@
+@page "/solver"
+@using TspLab.Domain.Entities
+@using TspLab.Domain.Models
+@using TspLab.Web.Services
+@using Microsoft.JSInterop
+@inject TspApiService ApiService
+@inject SignalRService SignalRService
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<PageTitle>TSP Solver - Advanced Configuration</PageTitle>
+
+<div class="min-h-screen bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center">
+                    <h1 class="text-2xl font-bold text-gray-900">TSP Solver</h1>
+                    <span class="ml-3 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                        Advanced Configuration
+                    </span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center">
+                        <div class="w-2 h-2 rounded-full @GetConnectionStatusClass()"></div>
+                        <span class="ml-2 text-sm text-gray-600">@GetConnectionStatusText()</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            
+            <!-- Configuration Panel -->
+            <div class="xl:col-span-1">
+                <div class="bg-white rounded-lg shadow-sm border p-6 sticky top-8">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-6">Problem Configuration</h2>
+                    
+                    <!-- Problem Setup -->
+                    <div class="space-y-6">
+                        <!-- City Configuration -->
+                        <div class="border rounded-lg p-4">
+                            <h3 class="font-medium text-gray-900 mb-3">City Setup</h3>
+                            <div class="space-y-3">
+                                <div class="flex space-x-2">
+                                    <input @bind="cityCount" type="number" min="3" max="200" 
+                                           class="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm" 
+                                           placeholder="City count" />
+                                    <button @onclick="GenerateRandomCities" disabled="@isGenerating"
+                                            class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50">
+                                        Random
+                                    </button>
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button @onclick="GenerateCircularCities" disabled="@isGenerating"
+                                            class="flex-1 px-3 py-2 bg-gray-600 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+                                        Circular
+                                    </button>
+                                    <button @onclick="GenerateClusteredCities" disabled="@isGenerating"
+                                            class="flex-1 px-3 py-2 bg-gray-600 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+                                        Clustered
+                                    </button>
+                                </div>
+                                <div class="text-xs text-gray-500">
+                                    Current: @(cities?.Length ?? 0) cities
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Algorithm Parameters -->
+                        <div class="border rounded-lg p-4">
+                            <h3 class="font-medium text-gray-900 mb-3">Algorithm Parameters</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Population Size</label>
+                                    <input @bind="config.PopulationSize" type="number" min="10" max="1000"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Max Generations</label>
+                                    <input @bind="config.MaxGenerations" type="number" min="10" max="5000"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Mutation Rate</label>
+                                    <input @bind="config.MutationRate" type="number" step="0.001" min="0" max="1"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Elitism Rate</label>
+                                    <input @bind="config.ElitismRate" type="number" step="0.01" min="0" max="1"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Strategy Selection -->
+                        @if (availableStrategies.HasValue)
+                        {
+                            <div class="border rounded-lg p-4">
+                                <h3 class="font-medium text-gray-900 mb-3">Genetic Operators</h3>
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Crossover Strategy</label>
+                                        <select @bind="config.CrossoverName" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                                            @foreach (var crossover in availableStrategies.Value.Crossovers)
+                                            {
+                                                <option value="@crossover">@crossover</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Mutation Strategy</label>
+                                        <select @bind="config.MutationName" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                                            @foreach (var mutation in availableStrategies.Value.Mutations)
+                                            {
+                                                <option value="@mutation">@mutation</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Control Buttons -->
+                        <div class="flex space-x-2">
+                            <button @onclick="StartSolving" disabled="@(!CanStartSolving())"
+                                    class="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                @if (isSolving) { <span>Solving...</span> } else { <span>Start Solving</span> }
+                            </button>
+                            <button @onclick="StopSolving" disabled="@(!isSolving)"
+                                    class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
+                                Stop
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Visualization and Results -->
+            <div class="xl:col-span-2">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    
+                    <!-- Tour Visualization -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Tour Visualization</h3>
+                        <div class="relative">
+                            <canvas id="solverCanvas" width="400" height="400" 
+                                    class="w-full h-auto border border-gray-200 rounded"></canvas>
+                            @if (cities == null || cities.Length == 0)
+                            {
+                                <div class="absolute inset-0 flex items-center justify-center text-gray-500">
+                                    Generate cities to see visualization
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Convergence Chart -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Convergence Chart</h3>
+                        <div class="relative">
+                            <canvas id="solverConvergenceChart" width="400" height="400" 
+                                    class="w-full h-auto border border-gray-200 rounded"></canvas>
+                            @if (!convergenceData.Any())
+                            {
+                                <div class="absolute inset-0 flex items-center justify-center text-gray-500">
+                                    Start solving to see convergence
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Statistics -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6 lg:col-span-2">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Solution Statistics</h3>
+                        @if (currentResult.HasValue)
+                        {
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div class="text-center">
+                                    <div class="text-2xl font-bold text-blue-600">@currentResult.Value.Generation</div>
+                                    <div class="text-sm text-gray-500">Generation</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-2xl font-bold text-green-600">@currentResult.Value.BestDistance.ToString("F2")</div>
+                                    <div class="text-sm text-gray-500">Best Distance</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-2xl font-bold text-purple-600">@currentResult.Value.BestFitness.ToString("F4")</div>
+                                    <div class="text-sm text-gray-500">Best Fitness</div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-2xl font-bold text-orange-600">@(currentResult.Value.ElapsedMilliseconds / 1000.0).ToString("F1")s</div>
+                                    <div class="text-sm text-gray-500">Elapsed Time</div>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-center text-gray-500 py-8">
+                                No solution data available
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Solution Log -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6 lg:col-span-2">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Solution Log</h3>
+                        <div class="h-32 overflow-y-auto bg-gray-50 rounded border p-3 font-mono text-xs">
+                            @if (executionLog.Any())
+                            {
+                                @foreach (var entry in executionLog.TakeLast(20))
+                                {
+                                    <div class="text-gray-700">@entry</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="text-gray-500">No log entries yet...</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private City[]? cities;
+    private int cityCount = 20;
+    private bool isGenerating = false;
+    private bool isSolving = false;
+    
+    private GeneticAlgorithmConfig config = new()
+    {
+        PopulationSize = 50,
+        MaxGenerations = 500,
+        MutationRate = 0.02,
+        ElitismRate = 0.1,
+        CrossoverName = "OrderCrossover",
+        MutationName = "SwapMutation"
+    };
+
+    private AvailableStrategies? availableStrategies;
+    private GeneticAlgorithmResult? currentResult;
+    private List<double> convergenceData = new();
+    private List<string> executionLog = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            availableStrategies = await ApiService.GetAvailableStrategiesAsync();
+            await SignalRService.StartConnectionAsync();
+            SignalRService.SubscribeToResults(OnGAResultReceived);
+            
+            // Generate initial cities
+            await GenerateRandomCities();
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Initialization error: {ex.Message}");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await DrawCities();
+        }
+    }
+
+    private async Task GenerateRandomCities()
+    {
+        if (isGenerating) return;
+        
+        isGenerating = true;
+        AddLogEntry($"Generating {cityCount} random cities...");
+        
+        try
+        {
+            cities = await ApiService.GenerateRandomCitiesAsync(cityCount);
+            await DrawCities();
+            AddLogEntry($"Generated {cities!.Length} cities successfully");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error generating cities: {ex.Message}");
+        }
+        finally
+        {
+            isGenerating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateCircularCities()
+    {
+        if (isGenerating) return;
+        
+        isGenerating = true;
+        AddLogEntry($"Generating {cityCount} cities in circular pattern...");
+        
+        try
+        {
+            var random = new Random();
+            var centerX = 200;
+            var centerY = 200;
+            var radius = 150;
+            
+            cities = new City[cityCount];
+            for (int i = 0; i < cityCount; i++)
+            {
+                var angle = 2 * Math.PI * i / cityCount;
+                var x = centerX + radius * Math.Cos(angle) + random.Next(-10, 11);
+                var y = centerY + radius * Math.Sin(angle) + random.Next(-10, 11);
+                cities[i] = new City(i, $"City{i}", x, y);
+            }
+            
+            await DrawCities();
+            AddLogEntry($"Generated {cities!.Length} circular cities successfully");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error generating circular cities: {ex.Message}");
+        }
+        finally
+        {
+            isGenerating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateClusteredCities()
+    {
+        if (isGenerating) return;
+        
+        isGenerating = true;
+        AddLogEntry($"Generating {cityCount} clustered cities...");
+        
+        try
+        {
+            var random = new Random();
+            cities = new City[cityCount];
+            
+            // Create 3-5 clusters
+            var clusterCount = Math.Min(5, Math.Max(3, cityCount / 5));
+            var citiesPerCluster = cityCount / clusterCount;
+            var cityIndex = 0;
+            
+            for (int cluster = 0; cluster < clusterCount; cluster++)
+            {
+                var clusterCenterX = random.Next(50, 350);
+                var clusterCenterY = random.Next(50, 350);
+                var clusterRadius = random.Next(30, 80);
+                
+                var citiesInThisCluster = (cluster == clusterCount - 1) ? 
+                    cityCount - cityIndex : citiesPerCluster;
+                
+                for (int i = 0; i < citiesInThisCluster; i++)
+                {
+                    var angle = random.NextDouble() * 2 * Math.PI;
+                    var distance = random.NextDouble() * clusterRadius;
+                    var x = clusterCenterX + distance * Math.Cos(angle);
+                    var y = clusterCenterY + distance * Math.Sin(angle);
+                    
+                    cities[cityIndex++] = new City(cityIndex - 1, $"City{cityIndex - 1}", x, y);
+                }
+            }
+            
+            await DrawCities();
+            AddLogEntry($"Generated {cities!.Length} clustered cities successfully");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error generating clustered cities: {ex.Message}");
+        }
+        finally
+        {
+            isGenerating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartSolving()
+    {
+        if (cities == null || isSolving) return;
+
+        isSolving = true;
+        convergenceData.Clear();
+        AddLogEntry($"Starting genetic algorithm with {config.PopulationSize} population...");
+        
+        try
+        {
+            await ApiService.StartTspSolvingAsync(cities, config, SignalRService.ConnectionId);
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error starting solver: {ex.Message}");
+            isSolving = false;
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task StopSolving()
+    {
+        if (!isSolving) return;
+        
+        try
+        {
+            // TODO: Implement stop endpoint in API
+            AddLogEntry("Stop functionality not yet implemented in API");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error stopping solver: {ex.Message}");
+        }
+        finally
+        {
+            isSolving = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task OnGAResultReceived(GeneticAlgorithmResult result)
+    {
+        currentResult = result;
+        convergenceData.Add(result.BestFitness);
+        
+        if (result.IsComplete)
+        {
+            isSolving = false;
+            AddLogEntry($"Solution completed! Best distance: {result.BestDistance:F2}");
+        }
+        else if (result.Generation % 10 == 0)
+        {
+            AddLogEntry($"Generation {result.Generation}: Best distance = {result.BestDistance:F2}");
+        }
+
+        StateHasChanged();
+        _ = Task.Run(async () =>
+        {
+            await DrawTour(result.BestTour);
+            await UpdateConvergenceChart();
+        });
+        
+        return Task.CompletedTask;
+    }
+
+    private bool CanStartSolving()
+    {
+        return cities != null && cities.Length >= 3 && !isSolving && config.IsValid();
+    }
+
+    private string GetConnectionStatusClass()
+    {
+        return SignalRService.ConnectionState switch
+        {
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connected => "bg-green-500",
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connecting => "bg-yellow-500",
+            Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Reconnecting => "bg-yellow-500",
+            _ => "bg-red-500"
+        };
+    }
+
+    private string GetConnectionStatusText()
+    {
+        return SignalRService.ConnectionState.ToString();
+    }
+
+    private void AddLogEntry(string message)
+    {
+        var timestamp = DateTime.Now.ToString("HH:mm:ss");
+        executionLog.Add($"[{timestamp}] {message}");
+    }
+
+    private async Task DrawCities()
+    {
+        if (cities == null) return;
+        
+        await JSRuntime.InvokeVoidAsync("drawCities", "solverCanvas", cities.Select(c => new { x = c.X, y = c.Y }).ToArray());
+    }
+
+    private async Task DrawTour(int[] tour)
+    {
+        if (cities == null) return;
+        
+        var tourPoints = tour.Select(i => new { x = cities[i].X, y = cities[i].Y }).ToArray();
+        await JSRuntime.InvokeVoidAsync("drawTour", "solverCanvas", tourPoints);
+    }
+
+    private async Task UpdateConvergenceChart()
+    {
+        if (convergenceData.Count == 0) return;
+        
+        await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "solverConvergenceChart", convergenceData.ToArray());
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        SignalRService.UnsubscribeFromResults(OnGAResultReceived);
+        await SignalRService.DisposeAsync();
+    }
+}

@@ -43,14 +43,20 @@ public sealed class TspApiService
     {
         try
         {
+            Console.WriteLine($"Requesting {count} cities with seed {seed}");
             var request = new GenerateCitiesRequest(count, seed);
             var response = await _httpClient.PostAsJsonAsync("/api/tsp/cities/generate", request);
+            Console.WriteLine($"Response status: {response.StatusCode}");
             response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<City[]>();
+            var cities = await response.Content.ReadFromJsonAsync<City[]>();
+            Console.WriteLine($"Received {cities?.Length ?? 0} cities");
+            return cities;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error generating cities: {ex.Message}");
+            Console.WriteLine($"Exception type: {ex.GetType().Name}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
             return null;
         }
     }
@@ -97,7 +103,7 @@ public readonly record struct AvailableStrategies(
 /// <param name="ConnectionId">SignalR connection ID for targeted updates (optional)</param>
 public readonly record struct TspSolveRequest(
     City[] Cities,
-    GeneticAlgorithmConfig Config,
+    GeneticAlgorithmConfig? Config,
     string? ConnectionId = null);
 
 /// <summary>

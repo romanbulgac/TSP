@@ -10,6 +10,12 @@ public sealed class SignalRService : IAsyncDisposable
 {
     private HubConnection? _hubConnection;
     private readonly List<Func<GeneticAlgorithmResult, Task>> _resultHandlers = new();
+    private readonly HttpClient _httpClient;
+
+    public SignalRService(HttpClient httpClient)
+    {
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+    }
 
     /// <summary>
     /// Connection state of the SignalR hub
@@ -29,14 +35,18 @@ public sealed class SignalRService : IAsyncDisposable
     /// <summary>
     /// Starts the SignalR connection
     /// </summary>
-    /// <param name="hubUrl">URL of the SignalR hub</param>
+    /// <param name="hubUrl">URL of the SignalR hub (relative path)</param>
     /// <returns>True if connection was successful</returns>
-    public async Task<bool> StartConnectionAsync(string hubUrl = "https://localhost:7001/tspHub")
+    public async Task<bool> StartConnectionAsync(string hubUrl = "/tspHub")
     {
         try
         {
+            // Construct absolute URL using the HttpClient's base address
+            var baseAddress = _httpClient.BaseAddress ?? throw new InvalidOperationException("HttpClient BaseAddress not set");
+            var fullHubUrl = new Uri(baseAddress, hubUrl.TrimStart('/'));
+
             _hubConnection = new HubConnectionBuilder()
-                .WithUrl(hubUrl)
+                .WithUrl(fullHubUrl.ToString())
                 .WithAutomaticReconnect()
                 .Build();
 
@@ -74,9 +84,8 @@ public sealed class SignalRService : IAsyncDisposable
 
             return true;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error starting SignalR connection: {ex.Message}");
             return false;
         }
     }
