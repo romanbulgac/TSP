@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using TspLab.Domain.Interfaces;
 using TspLab.Application.Services;
+using TspLab.Application.Heuristics;
+using TspLab.Application.Solvers;
 using TspLab.Infrastructure.Crossover;
 using TspLab.Infrastructure.Fitness;
 using TspLab.Infrastructure.Mutation;
@@ -23,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ICrossover, OrderCrossover>();
         services.AddTransient<ICrossover, PartiallyMappedCrossover>();
         services.AddTransient<ICrossover, CycleCrossover>();
+        services.AddTransient<ICrossover, EdgeRecombinationCrossover>();
 
         // Register mutation operators
         services.AddTransient<IMutation, SwapMutation>();
@@ -36,6 +39,12 @@ public static class ServiceCollectionExtensions
         services.AddTransient<GeneticEngine>();
         services.AddTransient<StrategyResolver>();
         services.AddTransient<TspSolverService>();
+
+        // Register TSP solver implementations
+        services.AddTransient<ITspSolver, NearestNeighborSolver>();
+        services.AddTransient<ITspSolver, TwoOptSolver>();
+        services.AddTransient<ITspSolver, SimulatedAnnealingSolver>();
+        services.AddTransient<ITspSolver, GeneticAlgorithmSolver>();
 
         // Add memory cache for fitness caching
         services.AddMemoryCache();

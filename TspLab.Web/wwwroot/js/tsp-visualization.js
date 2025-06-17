@@ -603,3 +603,150 @@ function animateTour(canvasId, fromTour, toTour, duration = 1000) {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('TSP Visualization JavaScript loaded');
 });
+
+// Benchmark chart functions
+function updateBenchmarkChart(canvasId, data, yAxisLabel) {
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) {
+        console.error(`Canvas element ${canvasId} not found`);
+        return;
+    }
+    
+    // Destroy existing chart if it exists
+    if (benchmarkCharts[canvasId]) {
+        benchmarkCharts[canvasId].destroy();
+    }
+    
+    // Prepare data based on chart type
+    let chartData;
+    let chartType = 'bar';
+    
+    if (yAxisLabel.includes('Distance')) {
+        // Distance comparison chart - show both average and best
+        chartData = {
+            labels: data.map(d => d.algorithm),
+            datasets: [
+                {
+                    label: 'Average Distance',
+                    data: data.map(d => d.avgDistance),
+                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Best Distance',
+                    data: data.map(d => d.bestDistance),
+                    backgroundColor: 'rgba(16, 185, 129, 0.6)',
+                    borderColor: 'rgb(16, 185, 129)',
+                    borderWidth: 1
+                }
+            ]
+        };
+    } else {
+        // Time comparison chart
+        chartData = {
+            labels: data.map(d => d.algorithm),
+            datasets: [{
+                label: yAxisLabel,
+                data: data.map(d => d.avgTime),
+                backgroundColor: 'rgba(168, 85, 247, 0.6)',
+                borderColor: 'rgb(168, 85, 247)',
+                borderWidth: 1
+            }]
+        };
+    }
+    
+    // Create new chart
+    benchmarkCharts[canvasId] = new Chart(ctx, {
+        type: chartType,
+        data: chartData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: yAxisLabel.includes('Distance') ? 'Algorithm Distance Comparison' : 'Algorithm Time Comparison',
+                    color: '#374151',
+                    font: {
+                        size: 14,
+                        weight: 'bold'
+                    }
+                },
+                legend: {
+                    display: yAxisLabel.includes('Distance'),
+                    position: 'top'
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#ffffff',
+                    borderColor: '#6b7280',
+                    borderWidth: 1
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Algorithm',
+                        color: '#374151',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        }
+                    },
+                    ticks: {
+                        color: '#6b7280',
+                        maxRotation: 45,
+                        minRotation: 0
+                    },
+                    grid: {
+                        color: 'rgba(156, 163, 175, 0.3)'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: yAxisLabel,
+                        color: '#374151',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        }
+                    },
+                    ticks: {
+                        color: '#6b7280',
+                        callback: function(value, index, values) {
+                            if (yAxisLabel.includes('Distance')) {
+                                return value.toFixed(1);
+                            } else {
+                                return value.toFixed(2) + 's';
+                            }
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(156, 163, 175, 0.3)'
+                    },
+                    beginAtZero: true
+                }
+            },
+            animation: {
+                duration: 800,
+                easing: 'easeInOutQuart'
+            }
+        }
+    });
+    
+    console.log(`Updated benchmark chart: ${canvasId}`);
+}
+
+// Clear all benchmark charts
+function clearBenchmarkCharts() {
+    Object.keys(benchmarkCharts).forEach(chartId => {
+        if (benchmarkCharts[chartId]) {
+            benchmarkCharts[chartId].destroy();
+            delete benchmarkCharts[chartId];
+        }
+    });
+}

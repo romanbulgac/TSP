@@ -132,6 +132,24 @@ public class CrossoverTests
         offspring1.IsValid().Should().BeTrue();
         offspring2.IsValid().Should().BeTrue();
     }
+
+    [Fact]
+    public void EdgeRecombinationCrossover_ShouldProduceValidOffspring()
+    {
+        // Arrange
+        var crossover = new EdgeRecombinationCrossover();
+        var parent1 = new Tour(new[] { 0, 1, 2, 3, 4, 5 });
+        var parent2 = new Tour(new[] { 0, 2, 4, 1, 3, 5 });
+
+        // Act
+        var (offspring1, offspring2) = crossover.Crossover(parent1, parent2, _random);
+
+        // Assert
+        offspring1.IsValid().Should().BeTrue();
+        offspring2.IsValid().Should().BeTrue();
+        offspring1.Length.Should().Be(parent1.Length);
+        offspring2.Length.Should().Be(parent2.Length);
+    }
 }
 
 /// <summary>

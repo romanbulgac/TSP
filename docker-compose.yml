@@ -1,6 +1,6 @@
 services:
-  # Combined API and WebAssembly service
-  tsp-app:
+  # API service
+  tsp-webapi:
     build:
       context: .
       dockerfile: Dockerfile
@@ -25,31 +25,17 @@ services:
       timeout: 10s
       retries: 3
 
-  # Alternative: Separate API and WebAssembly services
-  # api:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #     target: api
-  #   ports:
-  #     - "5001:5001"
-  #   environment:
-  #     - ASPNETCORE_ENVIRONMENT=Development
-  #     - ASPNETCORE_URLS=http://+:5001
-  #   volumes:
-  #     - ./logs:/app/logs
-  #   restart: unless-stopped
-
-  # web:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #     target: wasm
-  #   ports:
-  #     - "80:80"
-  #   depends_on:
-  #     - api
-  #   restart: unless-stopped
+  # WebAssembly frontend with nginx
+  tsp-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: wasm
+    ports:
+      - "8080:80"
+    depends_on:
+      - tsp-webapi
+    restart: unless-stopped
 
 networks:
   default:

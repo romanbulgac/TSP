@@ -1,14 +1,15 @@
 @page "/solver"
 @using TspLab.Domain.Entities
 @using TspLab.Domain.Models
+@using TspLab.Domain.Interfaces
 @using TspLab.Web.Services
 @using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components
 @inject TspApiService ApiService
 @inject SignalRService SignalRService
 @inject IJSRuntime JSRuntime
+@inject IEnumerable<ITspSolver> TspSolvers
 @implements IAsyncDisposable
-
-<PageTitle>TSP Solver - Advanced Configuration</PageTitle>
 
 <div class="min-h-screen bg-gray-50">
     <!-- Header -->
@@ -70,38 +71,64 @@
                             </div>
                         </div>
 
-                        <!-- Algorithm Parameters -->
+                        <!-- Algorithm Selection -->
                         <div class="border rounded-lg p-4">
-                            <h3 class="font-medium text-gray-900 mb-3">Algorithm Parameters</h3>
+                            <h3 class="font-medium text-gray-900 mb-3">Algorithm Selection</h3>
                             <div class="space-y-3">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Population Size</label>
-                                    <input @bind="config.PopulationSize" type="number" min="10" max="1000"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Algorithm</label>
+                                    <select @bind="selectedAlgorithm" @bind:after="OnAlgorithmChanged" 
+                                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                                        @foreach (var solver in availableSolvers)
+                                        {
+                                            <option value="@solver.Name">@solver.Name</option>
+                                        }
+                                    </select>
                                 </div>
-                                
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Max Generations</label>
-                                    <input @bind="config.MaxGenerations" type="number" min="10" max="5000"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
-                                </div>
-                                
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Mutation Rate</label>
-                                    <input @bind="config.MutationRate" type="number" step="0.001" min="0" max="1"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
-                                </div>
-                                
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">Elitism Rate</label>
-                                    <input @bind="config.ElitismRate" type="number" step="0.01" min="0" max="1"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
-                                </div>
+                                @if (!string.IsNullOrEmpty(selectedAlgorithmDescription))
+                                {
+                                    <div class="text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                                        @selectedAlgorithmDescription
+                                    </div>
+                                }
                             </div>
                         </div>
 
-                        <!-- Strategy Selection -->
-                        @if (availableStrategies.HasValue)
+                        <!-- Algorithm Parameters (show only for Genetic Algorithm) -->
+                        @if (selectedAlgorithm == "Genetic Algorithm")
+                        {
+                            <div class="border rounded-lg p-4">
+                                <h3 class="font-medium text-gray-900 mb-3">Algorithm Parameters</h3>
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Population Size</label>
+                                        <input @bind="config.PopulationSize" type="number" min="10" max="1000"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Max Generations</label>
+                                        <input @bind="config.MaxGenerations" type="number" min="10" max="5000"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Mutation Rate</label>
+                                        <input @bind="config.MutationRate" type="number" step="0.001" min="0" max="1"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Elitism Rate</label>
+                                        <input @bind="config.ElitismRate" type="number" step="0.01" min="0" max="1"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Strategy Selection (show only for Genetic Algorithm) -->
+                        @if (selectedAlgorithm == "Genetic Algorithm" && availableStrategies.HasValue)
                         {
                             <div class="border rounded-lg p-4">
                                 <h3 class="font-medium text-gray-900 mb-3">Genetic Operators</h3>
@@ -163,52 +190,84 @@
                         </div>
                     </div>
 
-                    <!-- Convergence Chart -->
-                    <div class="bg-white rounded-lg shadow-sm border p-6">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Convergence Chart</h3>
-                        <div class="relative">
-                            <canvas id="solverConvergenceChart" width="400" height="400" 
-                                    class="w-full h-auto border border-gray-200 rounded"></canvas>
-                            @if (!convergenceData.Any())
+                    <!-- Convergence Chart (for Genetic Algorithm) -->
+                    @if (selectedAlgorithm == "Genetic Algorithm")
+                    {
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Convergence Chart</h3>
+                            <div class="relative">
+                                <canvas id="solverConvergenceChart" width="400" height="400" 
+                                        class="w-full h-auto border border-gray-200 rounded"></canvas>
+                                @if (!convergenceData.Any())
+                                {
+                                    <div class="absolute inset-0 flex items-center justify-center text-gray-500">
+                                        Start solving to see convergence
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Algorithm Results (for individual algorithms) -->
+                    @if (lastSolverResult != null)
+                    {
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Algorithm Results</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="bg-blue-50 p-3 rounded">
+                                    <div class="text-sm font-medium text-blue-700">Algorithm</div>
+                                    <div class="text-lg font-bold text-blue-900">@lastSolverResult.AlgorithmName</div>
+                                </div>
+                                <div class="bg-green-50 p-3 rounded">
+                                    <div class="text-sm font-medium text-green-700">Distance</div>
+                                    <div class="text-lg font-bold text-green-900">@lastSolverResult.Distance.ToString("F2")</div>
+                                </div>
+                                <div class="bg-purple-50 p-3 rounded">
+                                    <div class="text-sm font-medium text-purple-700">Execution Time</div>
+                                    <div class="text-lg font-bold text-purple-900">@lastSolverResult.ExecutionTime.TotalMilliseconds.ToString("F0")ms</div>
+                                </div>
+                                <div class="bg-orange-50 p-3 rounded">
+                                    <div class="text-sm font-medium text-orange-700">Cities</div>
+                                    <div class="text-lg font-bold text-orange-900">@(cities?.Length ?? 0)</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Statistics (for Genetic Algorithm) -->
+                    @if (selectedAlgorithm == "Genetic Algorithm")
+                    {
+                        <div class="bg-white rounded-lg shadow-sm border p-6 lg:col-span-2">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Solution Statistics</h3>
+                            @if (currentResult.HasValue)
                             {
-                                <div class="absolute inset-0 flex items-center justify-center text-gray-500">
-                                    Start solving to see convergence
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div class="text-center">
+                                        <div class="text-2xl font-bold text-blue-600">@currentResult.Value.Generation</div>
+                                        <div class="text-sm text-gray-500">Generation</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-2xl font-bold text-green-600">@currentResult.Value.BestDistance.ToString("F2")</div>
+                                        <div class="text-sm text-gray-500">Best Distance</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-2xl font-bold text-purple-600">@currentResult.Value.BestFitness.ToString("F4")</div>
+                                        <div class="text-sm text-gray-500">Best Fitness</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-2xl font-bold text-orange-600">@(currentResult.Value.ElapsedMilliseconds / 1000.0).ToString("F1")s</div>
+                                        <div class="text-sm text-gray-500">Elapsed Time</div>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="text-center text-gray-500 py-8">
+                                    No solution data available
                                 </div>
                             }
                         </div>
-                    </div>
-
-                    <!-- Statistics -->
-                    <div class="bg-white rounded-lg shadow-sm border p-6 lg:col-span-2">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Solution Statistics</h3>
-                        @if (currentResult.HasValue)
-                        {
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div class="text-center">
-                                    <div class="text-2xl font-bold text-blue-600">@currentResult.Value.Generation</div>
-                                    <div class="text-sm text-gray-500">Generation</div>
-                                </div>
-                                <div class="text-center">
-                                    <div class="text-2xl font-bold text-green-600">@currentResult.Value.BestDistance.ToString("F2")</div>
-                                    <div class="text-sm text-gray-500">Best Distance</div>
-                                </div>
-                                <div class="text-center">
-                                    <div class="text-2xl font-bold text-purple-600">@currentResult.Value.BestFitness.ToString("F4")</div>
-                                    <div class="text-sm text-gray-500">Best Fitness</div>
-                                </div>
-                                <div class="text-center">
-                                    <div class="text-2xl font-bold text-orange-600">@(currentResult.Value.ElapsedMilliseconds / 1000.0).ToString("F1")s</div>
-                                    <div class="text-sm text-gray-500">Elapsed Time</div>
-                                </div>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="text-center text-gray-500 py-8">
-                                No solution data available
-                            </div>
-                        }
-                    </div>
+                    }
 
                     <!-- Solution Log -->
                     <div class="bg-white rounded-lg shadow-sm border p-6 lg:col-span-2">
@@ -239,6 +298,12 @@
     private bool isGenerating = false;
     private bool isSolving = false;
     
+    // Algorithm selection
+    private List<ITspSolver> availableSolvers = new();
+    private string selectedAlgorithm = "Genetic Algorithm";
+    private string selectedAlgorithmDescription = "";
+    private SolverResult? lastSolverResult;
+    
     private GeneticAlgorithmConfig config = new()
     {
         PopulationSize = 50,
@@ -254,10 +319,27 @@
     private List<double> convergenceData = new();
     private List<string> executionLog = new();
 
+    // Result tracking class
+    public class SolverResult
+    {
+        public string AlgorithmName { get; set; } = "";
+        public double Distance { get; set; }
+        public TimeSpan ExecutionTime { get; set; }
+        public Tour? Tour { get; set; }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
+            // Initialize available solvers
+            availableSolvers = TspSolvers.ToList();
+            if (availableSolvers.Count > 0)
+            {
+                selectedAlgorithm = availableSolvers[0].Name;
+                UpdateAlgorithmDescription();
+            }
+            
             availableStrategies = await ApiService.GetAvailableStrategiesAsync();
             await SignalRService.StartConnectionAsync();
             SignalRService.SubscribeToResults(OnGAResultReceived);
@@ -395,18 +477,27 @@
     {
         if (cities == null || isSolving) return;
 
-        isSolving = true;
-        convergenceData.Clear();
-        AddLogEntry($"Starting genetic algorithm with {config.PopulationSize} population...");
-        
-        try
+        // For Genetic Algorithm, use the existing streaming approach
+        if (selectedAlgorithm == "Genetic Algorithm")
         {
-            await ApiService.StartTspSolvingAsync(cities, config, SignalRService.ConnectionId);
+            isSolving = true;
+            convergenceData.Clear();
+            AddLogEntry($"Starting genetic algorithm with {config.PopulationSize} population...");
+            
+            try
+            {
+                await ApiService.StartTspSolvingAsync(cities, config, SignalRService.ConnectionId);
+            }
+            catch (Exception ex)
+            {
+                AddLogEntry($"Error starting solver: {ex.Message}");
+                isSolving = false;
+            }
         }
-        catch (Exception ex)
+        else
         {
-            AddLogEntry($"Error starting solver: {ex.Message}");
-            isSolving = false;
+            // For other algorithms, run them directly
+            await RunSelectedAlgorithm();
         }
         
         StateHasChanged();
@@ -420,6 +511,7 @@
         {
             // TODO: Implement stop endpoint in API
             AddLogEntry("Stop functionality not yet implemented in API");
+            await Task.CompletedTask; // Fix async warning
         }
         catch (Exception ex)
         {
@@ -504,6 +596,59 @@
         if (convergenceData.Count == 0) return;
         
         await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "solverConvergenceChart", convergenceData.ToArray());
+    }
+
+    private void OnAlgorithmChanged()
+    {
+        UpdateAlgorithmDescription();
+        StateHasChanged();
+    }
+
+    private void UpdateAlgorithmDescription()
+    {
+        var solver = availableSolvers.FirstOrDefault(s => s.Name == selectedAlgorithm);
+        selectedAlgorithmDescription = solver?.Description ?? "";
+    }
+
+    private async Task RunSelectedAlgorithm()
+    {
+        if (cities == null || isSolving) return;
+
+        var solver = availableSolvers.FirstOrDefault(s => s.Name == selectedAlgorithm);
+        if (solver == null) return;
+
+        isSolving = true;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        AddLogEntry($"Starting {solver.Name}...");
+
+        try
+        {
+            var tour = await solver.SolveAsync(cities);
+            stopwatch.Stop();
+
+            lastSolverResult = new SolverResult
+            {
+                AlgorithmName = solver.Name,
+                Distance = tour.Distance,
+                ExecutionTime = stopwatch.Elapsed,
+                Tour = tour
+            };
+
+            AddLogEntry($"{solver.Name} completed in {lastSolverResult.ExecutionTime.TotalMilliseconds:F0}ms");
+            AddLogEntry($"Best distance: {lastSolverResult.Distance:F2}");
+
+            // Draw the tour
+            await DrawTour(tour.Cities.ToArray());
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error running {solver.Name}: {ex.Message}");
+        }
+        finally
+        {
+            isSolving = false;
+            StateHasChanged();
+        }
     }
 
     public async ValueTask DisposeAsync()

@@ -1,14 +1,15 @@
 @page "/benchmark"
 @using TspLab.Domain.Entities
 @using TspLab.Domain.Models
+@using TspLab.Domain.Interfaces
 @using TspLab.Web.Services
 @using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components
 @inject TspApiService ApiService
 @inject SignalRService SignalRService
 @inject IJSRuntime JSRuntime
+@inject IEnumerable<ITspSolver> TspSolvers
 @implements IAsyncDisposable
-
-<PageTitle>TSP Benchmark - Algorithm Comparison</PageTitle>
 
 <div class="min-h-screen bg-gray-50">
     <!-- Header -->
@@ -57,15 +58,26 @@
 
                         <!-- Algorithm Configurations -->
                         <div class="border rounded-lg p-4">
-                            <h3 class="font-medium text-gray-900 mb-3">Algorithm Variants</h3>
+                            <h3 class="font-medium text-gray-900 mb-3">Algorithms to Test</h3>
                             <div class="space-y-3">
-                                @if (availableStrategies.HasValue)
+                                <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Individual Algorithms</div>
+                                @foreach (var solver in availableAlgorithms)
                                 {
+                                    <label class="flex items-center">
+                                        <input type="checkbox" @bind="solver.IsSelected" 
+                                               class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                        <span class="ml-2 text-sm">@solver.Name</span>
+                                    </label>
+                                }
+                                
+                                @if (availableStrategies.HasValue && algorithmConfigs.Any())
+                                {
+                                    <div class="text-xs font-medium text-gray-500 uppercase tracking-wide mt-4">GA Variants</div>
                                     @foreach (var config in algorithmConfigs)
                                     {
                                         <label class="flex items-center">
                                             <input type="checkbox" @bind="config.IsSelected" 
-                                                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                                   class="rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
                                             <span class="ml-2 text-sm">@config.Name</span>
                                         </label>
                                     }
@@ -255,14 +267,31 @@
 
     private List<TestProblem> testProblems = new();
     private List<AlgorithmConfig> algorithmConfigs = new();
+    private List<AlgorithmSelection> availableAlgorithms = new();
     private List<BenchmarkResult> benchmarkResults = new();
     private List<DetailedResult> detailedResults = new();
     private List<string> benchmarkLog = new();
 
+    // Classes for algorithm selection
+    public class AlgorithmSelection
+    {
+        public string Name { get; set; } = "";
+        public ITspSolver Solver { get; set; } = null!;
+        public bool IsSelected { get; set; } = false;
+    }
+    
     protected override async Task OnInitializedAsync()
     {
         try
         {
+            // Initialize available individual algorithms
+            availableAlgorithms = TspSolvers.Select(solver => new AlgorithmSelection
+            {
+                Name = solver.Name,
+                Solver = solver,
+                IsSelected = true // Select all by default
+            }).ToList();
+            
             availableStrategies = await ApiService.GetAvailableStrategiesAsync();
             await SignalRService.StartConnectionAsync();
             SignalRService.SubscribeToResults(OnGAResultReceived);
@@ -320,12 +349,13 @@
         detailedResults.Clear();
         
         var selectedProblems = testProblems.Where(p => p.IsSelected).ToList();
+        var selectedAlgorithms = availableAlgorithms.Where(a => a.IsSelected).ToList();
         var selectedConfigs = algorithmConfigs.Where(c => c.IsSelected).ToList();
         
-        var totalRuns = selectedProblems.Count * selectedConfigs.Count * runsPerConfig;
+        var totalRuns = selectedProblems.Count * (selectedAlgorithms.Count + selectedConfigs.Count) * runsPerConfig;
         var completedRuns = 0;
 
-        AddLogEntry($"Starting benchmark: {selectedProblems.Count} problems × {selectedConfigs.Count} algorithms × {runsPerConfig} runs = {totalRuns} total runs");
+        AddLogEntry($"Starting benchmark: {selectedProblems.Count} problems × {selectedAlgorithms.Count + selectedConfigs.Count} algorithms × {runsPerConfig} runs = {totalRuns} total runs");
 
         try
         {
@@ -333,6 +363,56 @@
             {
                 var cities = await GenerateProblemCities(problem);
                 
+                // Run individual algorithms
+                foreach (var algorithm in selectedAlgorithms)
+                {
+                    var results = new List<double>();
+                    var times = new List<double>();
+                    
+                    for (int run = 1; run <= runsPerConfig; run++)
+                    {
+                        currentBenchmarkStatus = $"Running {problem.Name} with {algorithm.Name} (Run {run}/{runsPerConfig})";
+                        StateHasChanged();
+
+                        var startTime = DateTime.Now;
+                        var tour = await algorithm.Solver.SolveAsync(cities);
+                        var endTime = DateTime.Now;
+                        var duration = (endTime - startTime).TotalSeconds;
+
+                        results.Add(tour.Distance);
+                        times.Add(duration);
+                        
+                        detailedResults.Add(new DetailedResult
+                        {
+                            AlgorithmName = algorithm.Name,
+                            ProblemName = problem.Name,
+                            RunNumber = run,
+                            FinalDistance = tour.Distance,
+                            TimeSeconds = duration
+                        });
+
+                        completedRuns++;
+                        benchmarkProgress = (double)completedRuns / totalRuns;
+                        
+                        AddLogEntry($"  Run {run}: Distance = {tour.Distance:F2}, Time = {duration:F1}s");
+                    }
+                    
+                    // Add benchmark result summary for this algorithm
+                    benchmarkResults.Add(new BenchmarkResult
+                    {
+                        AlgorithmName = algorithm.Name,
+                        ProblemName = problem.Name,
+                        BestDistance = results.Min(),
+                        WorstDistance = results.Max(),
+                        AverageDistance = results.Average(),
+                        BestTime = times.Min(),
+                        AverageTime = times.Average(),
+                        StandardDeviation = CalculateStandardDeviation(results),
+                        SuccessRate = CalculateSuccessRate(results, results.Min() * 1.1) // Within 10% of best
+                    });
+                }
+                
+                // Run GA variants (existing logic)
                 foreach (var algorithmConfig in selectedConfigs)
                 {
                     var results = new List<double>();
@@ -388,7 +468,9 @@
                         BestDistance = results.Min(),
                         AverageDistance = results.Average(),
                         WorstDistance = results.Max(),
+                        BestTime = times.Min(),
                         AverageTime = times.Average(),
+                        StandardDeviation = CalculateStandardDeviation(results),
                         SuccessRate = CalculateSuccessRate(results, results.Min() * 1.1) // Within 10% of best
                     };
 
@@ -515,13 +597,22 @@
         }
     }
 
+    private double CalculateStandardDeviation(List<double> values)
+    {
+        if (values.Count <= 1) return 0.0;
+        
+        var mean = values.Average();
+        var sumOfSquaredDifferences = values.Sum(v => Math.Pow(v - mean, 2));
+        return Math.Sqrt(sumOfSquaredDifferences / (values.Count - 1));
+    }
+
     private double CalculateSuccessRate(List<double> results, double threshold)
     {
         var successfulRuns = results.Count(r => r <= threshold);
         return (double)successfulRuns / results.Count;
     }
 
-    private async Task StopBenchmark()
+    private void StopBenchmark()
     {
         if (!isBenchmarking) return;
         
@@ -551,8 +642,8 @@
     {
         return !isBenchmarking && 
                testProblems.Any(p => p.IsSelected) && 
-               algorithmConfigs.Any(c => c.IsSelected) &&
-               availableStrategies.HasValue;
+               (availableAlgorithms.Any(a => a.IsSelected) || 
+                (algorithmConfigs.Any(c => c.IsSelected) && availableStrategies.HasValue));
     }
 
     private string GetSuccessRateClass(double rate)
@@ -655,7 +746,9 @@
         public double BestDistance { get; set; }
         public double AverageDistance { get; set; }
         public double WorstDistance { get; set; }
+        public double BestTime { get; set; }
         public double AverageTime { get; set; }
+        public double StandardDeviation { get; set; }
         public double SuccessRate { get; set; }
     }
 

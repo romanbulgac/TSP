@@ -296,13 +296,12 @@
             isSolving = false;
             StateHasChanged();
         }
-    }
-
-    private async Task StopSolving()
+    }    private Task StopSolving()
     {
         isSolving = false;
         AddLogEntry("Solving stopped");
         StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private async Task ClearConvergenceChart()

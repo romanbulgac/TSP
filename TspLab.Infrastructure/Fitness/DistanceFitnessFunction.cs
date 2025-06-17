@@ -13,6 +13,7 @@ public sealed class DistanceFitnessFunction : IFitnessFunction
     private readonly IMemoryCache _cache;
     private readonly ILogger<DistanceFitnessFunction> _logger;
     private readonly object _lockObject = new();
+    private MemoryCache memoryCache;
 
     public string Name => "DistanceFitness";
 
@@ -20,6 +21,11 @@ public sealed class DistanceFitnessFunction : IFitnessFunction
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public DistanceFitnessFunction(MemoryCache memoryCache)
+    {
+        this.memoryCache = memoryCache;
     }
 
     public double CalculateFitness(Tour tour, ReadOnlySpan<City> cities)
