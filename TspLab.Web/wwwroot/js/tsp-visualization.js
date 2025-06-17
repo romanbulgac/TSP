@@ -8,67 +8,77 @@ let benchmarkCharts = {};
 // Initialize Chart.js configuration
 function initializeChart(canvasId) {
     const ctx = document.getElementById(canvasId);
-    if (!ctx) return null;
+    if (!ctx) {
+        console.error('Canvas element not found:', canvasId);
+        return null;
+    }
     
-    return new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Best Fitness',
-                data: [],
-                borderColor: 'rgb(59, 130, 246)',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                borderWidth: 3,
-                tension: 0.2,
-                fill: true,
-                pointRadius: 2,
-                pointHoverRadius: 5
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: {
-                duration: 300,
-                easing: 'easeInOutQuart'
+    // Check if Chart.js is available
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js library is not loaded');
+        return null;
+    }
+    
+    try {
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Best Fitness',
+                    data: [],
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 3,
+                    tension: 0.2,
+                    fill: true,
+                    pointRadius: 2,
+                    pointHoverRadius: 5
+                }]
             },
-            scales: {
-                x: {
-                    display: true,
-                    title: {
-                        display: true,
-                        text: 'Generation',
-                        color: '#374151',
-                        font: {
-                            size: 12,
-                            weight: 'bold'
-                        }
-                    },
-                    grid: {
-                        color: 'rgba(156, 163, 175, 0.3)'
-                    },
-                    ticks: {
-                        color: '#6B7280'
-                    }
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 300,
+                    easing: 'easeInOutQuart'
                 },
-                y: {
-                    display: true,
-                    title: {
+                scales: {
+                    x: {
                         display: true,
-                        text: 'Fitness (1000/Distance)',
-                        color: '#374151',
-                        font: {
-                            size: 12,
-                            weight: 'bold'
+                        title: {
+                            display: true,
+                            text: 'Generation',
+                            color: '#374151',
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(156, 163, 175, 0.3)'
+                        },
+                        ticks: {
+                            color: '#6B7280'
                         }
                     },
-                    grid: {
-                        color: 'rgba(156, 163, 175, 0.3)'
-                    },
-                    ticks: {
-                        color: '#6B7280',
-                        callback: function(value) {
+                    y: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Fitness (1000/Distance)',
+                            color: '#374151',
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(156, 163, 175, 0.3)'
+                        },
+                        ticks: {
+                            color: '#6B7280',
+                            callback: function(value) {
                             return value.toFixed(3);
                         }
                     }
@@ -125,6 +135,10 @@ function initializeChart(canvasId) {
             }
         }
     });
+    } catch (error) {
+        console.error('Error initializing chart:', error);
+        return null;
+    }
 }
 
 // Draw cities on canvas
@@ -319,11 +333,17 @@ function drawTour(canvasId, tourPoints) {
 function updateConvergenceChart(canvasId, data) {
     console.log('updateConvergenceChart called with:', canvasId, data);
     
+    // Check if Chart.js is available
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js library is not loaded');
+        return;
+    }
+    
     if (!convergenceChart) {
         console.log('Initializing convergence chart...');
         convergenceChart = initializeChart(canvasId);
         if (!convergenceChart) {
-            console.error('Failed to initialize convergence chart');
+            console.error('Failed to initialize convergence chart - check if canvas exists and Chart.js is loaded');
             return;
         }
     }

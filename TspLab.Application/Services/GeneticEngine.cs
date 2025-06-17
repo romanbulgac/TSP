@@ -63,8 +63,16 @@ public sealed class GeneticEngine
         
         var bestTour = GetBestTour(population);
         var convergenceHistory = new List<double>();
+        
+        // Tracking for stagnation detection
+        var lastImprovementGeneration = 0;
+        var lastBestFitness = bestTour.Fitness;
+        const double fitnessImprovementThreshold = 1e-6; // Minimum improvement considered significant
+        
+        int currentGeneration = 0;
+        bool completedEarly = false;
 
-        for (int generation = 0; generation < config.MaxGenerations; generation++)
+        for (currentGeneration = 0; currentGeneration < config.MaxGenerations; currentGeneration++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -76,44 +84,67 @@ public sealed class GeneticEngine
             
             // Track best solution
             var currentBest = GetBestTour(population);
-            if (currentBest.Fitness > bestTour.Fitness)
+            
+            if (currentBest.Fitness - bestTour.Fitness > fitnessImprovementThreshold)
             {
                 bestTour = currentBest.Clone();
-                _logger.LogDebug("New best fitness: {Fitness} at generation {Generation}", 
-                    bestTour.Fitness, generation);
+                lastImprovementGeneration = currentGeneration;
+                lastBestFitness = bestTour.Fitness;
+                
+                _logger.LogDebug("Improvement found at generation {Generation}: fitness = {Fitness}", 
+                    currentGeneration, bestTour.Fitness);
             }
 
             var avgFitness = population.Average(t => t.Fitness);
             convergenceHistory.Add(bestTour.Fitness);
 
+            // Check for early termination conditions
+            var generationsWithoutImprovement = currentGeneration - lastImprovementGeneration;
+            var shouldStopDueToStagnation = config.StagnationLimit > 0 && 
+                                          generationsWithoutImprovement >= config.StagnationLimit;
+
+            // Check if this is the last generation (either due to max generations or early termination)
+            var isLastGeneration = currentGeneration >= config.MaxGenerations - 1 || shouldStopDueToStagnation;
+
             // Yield current result
-            yield return new GeneticAlgorithmResult(
-                Generation: generation,
+            var result = new GeneticAlgorithmResult(
+                Generation: currentGeneration,
                 BestFitness: bestTour.Fitness,
                 AverageFitness: avgFitness,
                 BestTour: bestTour.Cities.ToArray(),
                 BestDistance: bestTour.Distance,
                 ElapsedMilliseconds: stopwatch.ElapsedMilliseconds,
-                IsComplete: false
+                IsComplete: isLastGeneration
             );
+            
+            yield return result;
 
-            // Small delay to prevent overwhelming the client
-            await Task.Delay(10, cancellationToken);
+            // Early termination checks
+            if (shouldStopDueToStagnation)
+            {
+                _logger.LogInformation("Stopping due to stagnation: {Generations} generations without improvement", 
+                    generationsWithoutImprovement);
+                completedEarly = true;
+                break;
+            }
         }
 
-        // Final result
-        yield return new GeneticAlgorithmResult(
-            Generation: config.MaxGenerations,
-            BestFitness: bestTour.Fitness,
-            AverageFitness: population.Average(t => t.Fitness),
-            BestTour: bestTour.Cities.ToArray(),
-            BestDistance: bestTour.Distance,
-            ElapsedMilliseconds: stopwatch.ElapsedMilliseconds,
-            IsComplete: true
-        );
+        // Only send final result if we didn't complete early (to avoid duplication)
+        if (!completedEarly && currentGeneration >= config.MaxGenerations)
+        {
+            yield return new GeneticAlgorithmResult(
+                Generation: config.MaxGenerations - 1, // Last valid generation index
+                BestFitness: bestTour.Fitness,
+                AverageFitness: population.Average(t => t.Fitness),
+                BestTour: bestTour.Cities.ToArray(),
+                BestDistance: bestTour.Distance,
+                ElapsedMilliseconds: stopwatch.ElapsedMilliseconds,
+                IsComplete: true
+            );
+        }
 
-        _logger.LogInformation("GA completed. Best fitness: {Fitness}, Total time: {ElapsedMs}ms",
-            bestTour.Fitness, stopwatch.ElapsedMilliseconds);
+        _logger.LogInformation("GA completed. Best fitness: {Fitness}, Generations: {Generations}, Total time: {ElapsedMs}ms",
+            bestTour.Fitness, completedEarly ? currentGeneration + 1 : config.MaxGenerations, stopwatch.ElapsedMilliseconds);
     }
 
     /// <summary>
@@ -184,8 +215,8 @@ public sealed class GeneticEngine
         for (int i = eliteCount; i < newPopulation.Length; i += 2)
         {
             // Tournament selection
-            var parent1 = TournamentSelection(population, 3);
-            var parent2 = TournamentSelection(population, 3);
+            var parent1 = TournamentSelection(population, config.TournamentSize);
+            var parent2 = TournamentSelection(population, config.TournamentSize);
 
             // Crossover
             var (offspring1, offspring2) = crossover.Crossover(parent1, parent2, _random);

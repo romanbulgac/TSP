@@ -68,7 +68,7 @@ public class GeneticAlgorithmConfig
     /// <summary>
     /// Interval for reporting progress (in generations)
     /// </summary>
-    public int ProgressReportInterval { get; set; } = 10;
+    public int ProgressReportInterval { get; set; } = 50;
 
     /// <summary>
     /// Whether to track detailed statistics

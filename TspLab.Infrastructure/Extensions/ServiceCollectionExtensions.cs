@@ -3,6 +3,7 @@ using TspLab.Domain.Interfaces;
 using TspLab.Application.Services;
 using TspLab.Application.Heuristics;
 using TspLab.Application.Solvers;
+using TspLab.Application.Metaheuristics;
 using TspLab.Infrastructure.Crossover;
 using TspLab.Infrastructure.Fitness;
 using TspLab.Infrastructure.Mutation;
@@ -39,12 +40,14 @@ public static class ServiceCollectionExtensions
         services.AddTransient<GeneticEngine>();
         services.AddTransient<StrategyResolver>();
         services.AddTransient<TspSolverService>();
+        services.AddTransient<AntColonyService>();
 
         // Register TSP solver implementations
         services.AddTransient<ITspSolver, NearestNeighborSolver>();
         services.AddTransient<ITspSolver, TwoOptSolver>();
         services.AddTransient<ITspSolver, SimulatedAnnealingSolver>();
         services.AddTransient<ITspSolver, GeneticAlgorithmSolver>();
+        services.AddTransient<ITspSolver, AntColonyOptimizationSolver>();
 
         // Add memory cache for fitness caching
         services.AddMemoryCache();

@@ -31,9 +31,7 @@ public sealed class DistanceFitnessFunction : IFitnessFunction
     public double CalculateFitness(Tour tour, ReadOnlySpan<City> cities)
     {
         var distance = CalculateDistance(tour, cities);
-        
-        _logger.LogDebug("Calculating fitness for tour: Distance={Distance}", distance);
-        
+                
         // Ensure distance is valid
         if (distance <= 0 || double.IsNaN(distance) || double.IsInfinity(distance) || distance == double.MaxValue)
         {
@@ -43,9 +41,8 @@ public sealed class DistanceFitnessFunction : IFitnessFunction
         
         // Fitness is inverse of distance (higher fitness = shorter distance)
         // Use 1/distance formula with scaling for better visualization
-        var fitness = 1000.0 / distance;
+        var fitness = 1000000.0 / distance;
         
-        _logger.LogDebug("Calculated fitness: Distance={Distance}, Fitness={Fitness}", distance, fitness);
         
         return fitness;
     }

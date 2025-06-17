@@ -295,6 +295,7 @@
             availableStrategies = await ApiService.GetAvailableStrategiesAsync();
             await SignalRService.StartConnectionAsync();
             SignalRService.SubscribeToResults(OnGAResultReceived);
+            SignalRService.SubscribeToAcoResults(OnAcoResultReceived);
             
             InitializeTestProblems();
             InitializeAlgorithmConfigs();
@@ -686,6 +687,12 @@
         return Task.CompletedTask;
     }
 
+    private Task OnAcoResultReceived(AntColonyResult result)
+    {
+        // Results are handled in benchmark methods that use ACO
+        return Task.CompletedTask;
+    }
+
     private async Task UpdateCharts()
     {
         if (!benchmarkResults.Any()) return;
@@ -720,6 +727,7 @@
     public async ValueTask DisposeAsync()
     {
         SignalRService.UnsubscribeFromResults(OnGAResultReceived);
+        SignalRService.UnsubscribeFromAcoResults(OnAcoResultReceived);
         await SignalRService.DisposeAsync();
     }
 

@@ -82,6 +82,77 @@ public sealed class TspApiService
             return false;
         }
     }
+
+    /// <summary>
+    /// Stops TSP solving operation
+    /// </summary>
+    /// <param name="connectionId">SignalR connection ID</param>
+    /// <returns>Success status</returns>
+    public async Task<bool> StopTspSolvingAsync(string? connectionId = null)
+    {
+        try
+        {
+            var url = $"/api/tsp/stop?connectionId={connectionId ?? "all"}";
+            var response = await _httpClient.PostAsync(url, null);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error stopping TSP solving: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Starts ACO solving via SignalR (non-blocking)
+    /// </summary>
+    /// <param name="cities">Cities to solve</param>
+    /// <param name="config">ACO configuration</param>
+    /// <param name="connectionId">SignalR connection ID</param>
+    /// <returns>Success status</returns>
+    public async Task<bool> StartAcoSolvingAsync(City[] cities, AntColonyConfig config, string? connectionId = null)
+    {
+        try
+        {
+            var request = new AcoSolveRequest(cities, config, connectionId);
+            var response = await _httpClient.PostAsJsonAsync("/api/tsp/solve/aco", request);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error starting ACO solving: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Generates clustered cities for testing
+    /// </summary>
+    /// <param name="count">Number of cities to generate</param>
+    /// <param name="clusterCount">Number of clusters</param>
+    /// <param name="seed">Random seed (optional)</param>
+    /// <returns>Array of generated clustered cities</returns>
+    public async Task<City[]?> GenerateClusteredCitiesAsync(int count, int clusterCount = 3, int? seed = null)
+    {
+        try
+        {
+            Console.WriteLine($"Requesting {count} clustered cities with {clusterCount} clusters and seed {seed}");
+            var request = new GenerateClusteredCitiesRequest(count, clusterCount, seed);
+            var response = await _httpClient.PostAsJsonAsync("/api/tsp/cities/generate/clustered", request);
+            Console.WriteLine($"Response status: {response.StatusCode}");
+            response.EnsureSuccessStatusCode();
+            var cities = await response.Content.ReadFromJsonAsync<City[]>();
+            Console.WriteLine($"Received {cities?.Length ?? 0} clustered cities");
+            return cities;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating clustered cities: {ex.Message}");
+            Console.WriteLine($"Exception type: {ex.GetType().Name}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            return null;
+        }
+    }
 }
 
 /// <summary>
@@ -113,4 +184,26 @@ public readonly record struct TspSolveRequest(
 /// <param name="Seed">Random seed for reproducible results (optional)</param>
 public readonly record struct GenerateCitiesRequest(
     int Count,
+    int? Seed = null);
+
+/// <summary>
+/// Request model for solving TSP using Ant Colony Optimization
+/// </summary>
+/// <param name="Cities">Array of cities to visit</param>
+/// <param name="Config">ACO algorithm configuration</param>
+/// <param name="ConnectionId">SignalR connection ID for targeted updates (optional)</param>
+public readonly record struct AcoSolveRequest(
+    City[] Cities,
+    AntColonyConfig? Config,
+    string? ConnectionId = null);
+
+/// <summary>
+/// Request model for generating clustered cities
+/// </summary>
+/// <param name="Count">Number of cities to generate</param>
+/// <param name="ClusterCount">Number of clusters to create</param>
+/// <param name="Seed">Random seed for reproducible results (optional)</param>
+public readonly record struct GenerateClusteredCitiesRequest(
+    int Count,
+    int ClusterCount = 3,
     int? Seed = null);

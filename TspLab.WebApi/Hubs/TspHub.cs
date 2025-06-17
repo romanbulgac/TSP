@@ -42,4 +42,13 @@ public sealed class TspHub : Hub
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
     }
+
+    /// <summary>
+    /// Returns the current connection ID for testing purposes
+    /// </summary>
+    /// <returns>The connection ID</returns>
+    public string GetConnectionId()
+    {
+        return Context.ConnectionId;
+    }
 }

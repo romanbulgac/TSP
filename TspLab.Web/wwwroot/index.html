@@ -127,6 +127,34 @@
             </div>
         </div>
     </div>
+      <!-- Error Debugging Script -->
+    <script>
+        // Global error handler
+        window.addEventListener('error', function(e) {
+            console.error('Global Error:', e.error);
+            console.error('Message:', e.message);
+            console.error('Source:', e.filename);
+            console.error('Line:', e.lineno);
+            console.error('Column:', e.colno);
+        });
+        
+        // Unhandled promise rejection handler
+        window.addEventListener('unhandledrejection', function(e) {
+            console.error('Unhandled Promise Rejection:', e.reason);
+            console.error('Promise:', e.promise);
+        });
+        
+        // Blazor error handler
+        window.Blazor = window.Blazor || {};
+        window.Blazor.start = window.Blazor.start || function() {
+            console.log('Blazor starting...');
+        };
+        
+        // Debug logging
+        console.log('TSP Lab Application Starting...');
+        console.log('Current URL:', window.location.href);
+        console.log('User Agent:', navigator.userAgent);
+    </script>
     
     <!-- Custom TSP Visualization JavaScript -->
     <script src="js/tsp-visualization.js"></script>

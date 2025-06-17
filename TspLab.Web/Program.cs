@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.AspNetCore.SignalR.Client;
 using TspLab.Web;
 using TspLab.Web.Services;
+using TspLab.Infrastructure.Extensions;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -17,5 +18,8 @@ builder.Services.AddScoped(sp => new HttpClient
 // Register application services
 builder.Services.AddScoped<TspApiService>();
 builder.Services.AddScoped<SignalRService>();
+
+// Register infrastructure services (including TSP solvers)
+builder.Services.AddInfrastructure();
 
 await builder.Build().RunAsync();

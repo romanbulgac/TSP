@@ -70,11 +70,17 @@
                             <input @bind="config.MutationRate" type="number" step="0.001" min="0" max="1"
                                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
                         </div>
-                        
-                        <div>
+                          <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Elitism Rate</label>
                             <input @bind="config.ElitismRate" type="number" step="0.01" min="0" max="1"
                                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Update Interval (generations)</label>
+                            <input @bind="config.ProgressReportInterval" type="number" min="1" max="500"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                            <p class="text-xs text-gray-500 mt-1">How often to send updates to UI (higher = better performance)</p>
                         </div>
                     </div>
 
@@ -204,16 +210,38 @@
     private List<double> convergenceData = new();
     private List<string> executionLog = new();    protected override async Task OnInitializedAsync()
     {
-        // Load available strategies
-        availableStrategies = await ApiService.GetAvailableStrategiesAsync();
-        
-        // Start SignalR connection
-        await SignalRService.StartConnectionAsync();
-        SignalRService.SubscribeToResults(OnGAResultReceived);
-        
-        // Generate initial cities
-        await GenerateCities();
-    }    protected override async Task OnAfterRenderAsync(bool firstRender)
+        try
+        {
+            AddLogEntry("Initializing Home component...");
+            
+            // Load available strategies
+            AddLogEntry("Loading available strategies...");
+            availableStrategies = await ApiService.GetAvailableStrategiesAsync();
+            AddLogEntry("Available strategies loaded successfully");
+            
+            // Start SignalR connection
+            AddLogEntry("Starting SignalR connection...");
+            var signalRConnected = await SignalRService.StartConnectionAsync();
+            if (signalRConnected)
+            {
+                AddLogEntry("SignalR connected successfully");
+                SignalRService.SubscribeToResults(OnGAResultReceived);
+                AddLogEntry("Subscribed to GA results");
+            }
+            else
+            {
+                AddLogEntry("ERROR: Failed to connect to SignalR");
+            }
+            
+            // Generate initial cities
+            AddLogEntry("Generating initial cities...");
+            await GenerateCities();
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"ERROR in OnInitializedAsync: {ex.Message}");
+        }
+    }protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
@@ -276,8 +304,8 @@
         
         isGenerating = false;
         StateHasChanged();
-    }    private async Task StartSolving()
-    {
+    }    
+    private async Task StartSolving(){
         if (cities == null || !config.IsValid()) return;
         
         isSolving = true;
@@ -296,12 +324,33 @@
             isSolving = false;
             StateHasChanged();
         }
-    }    private Task StopSolving()
+    }    private async Task StopSolving()
     {
-        isSolving = false;
-        AddLogEntry("Solving stopped");
-        StateHasChanged();
-        return Task.CompletedTask;
+        if (!isSolving) return;
+        
+        try
+        {
+            AddLogEntry("Stopping solver...");
+            var success = await ApiService.StopTspSolvingAsync(SignalRService.ConnectionId);
+            
+            if (success)
+            {
+                AddLogEntry("Stop request sent successfully");
+            }
+            else
+            {
+                AddLogEntry("Failed to send stop request");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error stopping solver: {ex.Message}");
+        }
+        finally
+        {
+            isSolving = false;
+            StateHasChanged();
+        }
     }
 
     private async Task ClearConvergenceChart()
