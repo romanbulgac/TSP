@@ -2,6 +2,7 @@ using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
 using TspLab.Domain.Entities;
 using TspLab.Domain.Models;
+using TspLab.Domain.Interfaces;
 using TspLab.Infrastructure.Crossover;
 using TspLab.Infrastructure.Mutation;
 using TspLab.Infrastructure.Fitness;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Caching.Memory;
 namespace TspLab.Tests.Benchmarks;
 
 /// <summary>
-/// Benchmark tests for genetic algorithm performance
+/// Benchmark tests for genetic algorithm performance with all crossover and mutation combinations
 /// </summary>
 [MemoryDiagnoser]
 [SimpleJob]
@@ -18,10 +19,33 @@ public class GeneticAlgorithmBenchmarks
 {
     private City[] _cities = null!;
     private Tour[] _population = null!;
-    private OrderCrossover _crossover = null!;
-    private SwapMutation _mutation = null!;
+    private Dictionary<string, ICrossover> _crossoverOperators = null!;
+    private Dictionary<string, IMutation> _mutationOperators = null!;
     private DistanceFitnessFunction _fitnessFunction = null!;
     private Random _random = null!;
+
+    // Parameters for benchmark combinations
+    [ParamsSource(nameof(CrossoverNames))]
+    public string CrossoverName { get; set; } = "OrderCrossover";
+
+    [ParamsSource(nameof(MutationNames))]
+    public string MutationName { get; set; } = "SwapMutation";
+
+    // Properties to provide parameter values
+    public static IEnumerable<string> CrossoverNames => new[]
+    {
+        "OrderCrossover",
+        "CycleCrossover", 
+        "PartiallyMappedCrossover",
+        "EdgeRecombinationCrossover"
+    };
+
+    public static IEnumerable<string> MutationNames => new[]
+    {
+        "SwapMutation",
+        "InversionMutation",
+        "TwoOptMutation"
+    };
 
     [GlobalSetup]
     public void Setup()
@@ -29,7 +53,7 @@ public class GeneticAlgorithmBenchmarks
         // Generate test cities
         _random = new Random(42);
         _cities = GenerateRandomCities(50);
-        
+
         // Create test population
         _population = new Tour[100];
         for (int i = 0; i < _population.Length; i++)
@@ -39,9 +63,24 @@ public class GeneticAlgorithmBenchmarks
             _population[i] = new Tour(cities);
         }
 
-        // Initialize operators
-        _crossover = new OrderCrossover();
-        _mutation = new SwapMutation { MutationRate = 0.01 };
+        // Initialize all crossover operators
+        _crossoverOperators = new Dictionary<string, ICrossover>
+        {
+            { "OrderCrossover", new OrderCrossover() },
+            { "CycleCrossover", new CycleCrossover() },
+            { "PartiallyMappedCrossover", new PartiallyMappedCrossover() },
+            { "EdgeRecombinationCrossover", new EdgeRecombinationCrossover() }
+        };
+
+        // Initialize all mutation operators
+        _mutationOperators = new Dictionary<string, IMutation>
+        {
+            { "SwapMutation", new SwapMutation { MutationRate = 0.01 } },
+            { "InversionMutation", new InversionMutation { MutationRate = 0.01 } },
+            { "TwoOptMutation", new TwoOptMutation { MutationRate = 0.01 } }
+        };
+
+        // Initialize fitness function
         _fitnessFunction = new DistanceFitnessFunction(new MemoryCache(new MemoryCacheOptions()));
     }
 
@@ -59,12 +98,14 @@ public class GeneticAlgorithmBenchmarks
     [Benchmark]
     public Tour[] CrossoverBenchmark()
     {
+        var crossover = _crossoverOperators[CrossoverName];
         var offspring = new Tour[_population.Length];
+        
         for (int i = 0; i < _population.Length; i += 2)
         {
             var parent1 = _population[i];
             var parent2 = _population[(i + 1) % _population.Length];
-            var (child1, child2) = _crossover.Crossover(parent1, parent2, _random);
+            var (child1, child2) = crossover.Crossover(parent1, parent2, _random);
             offspring[i] = child1;
             if (i + 1 < offspring.Length)
                 offspring[i + 1] = child2;
@@ -75,10 +116,83 @@ public class GeneticAlgorithmBenchmarks
     [Benchmark]
     public void MutationBenchmark()
     {
+        var mutation = _mutationOperators[MutationName];
         foreach (var tour in _population)
         {
-            _mutation.Mutate(tour, _random);
+            // Create a copy to avoid modifying the original population
+            var tourCopy = tour.Clone();
+            mutation.Mutate(tourCopy, _random);
         }
+    }
+
+    [Benchmark]
+    public Tour[] CombinedGeneticOperators()
+    {
+        var crossover = _crossoverOperators[CrossoverName];
+        var mutation = _mutationOperators[MutationName];
+        var offspring = new Tour[_population.Length];
+        
+        // Crossover phase
+        for (int i = 0; i < _population.Length; i += 2)
+        {
+            var parent1 = _population[i];
+            var parent2 = _population[(i + 1) % _population.Length];
+            var (child1, child2) = crossover.Crossover(parent1, parent2, _random);
+            offspring[i] = child1;
+            if (i + 1 < offspring.Length)
+                offspring[i + 1] = child2;
+        }
+        
+        // Mutation phase
+        foreach (var tour in offspring)
+        {
+            mutation.Mutate(tour, _random);
+        }
+        
+        return offspring;
+    }
+
+    [Benchmark]
+    public double CompleteGeneticIteration()
+    {
+        var crossover = _crossoverOperators[CrossoverName];
+        var mutation = _mutationOperators[MutationName];
+        
+        // Calculate fitness for current population
+        var fitnessScores = new double[_population.Length];
+        for (int i = 0; i < _population.Length; i++)
+        {
+            fitnessScores[i] = _fitnessFunction.CalculateFitness(_population[i], _cities);
+        }
+        
+        // Create offspring through crossover
+        var offspring = new Tour[_population.Length];
+        for (int i = 0; i < _population.Length; i += 2)
+        {
+            var parent1 = _population[i];
+            var parent2 = _population[(i + 1) % _population.Length];
+            var (child1, child2) = crossover.Crossover(parent1, parent2, _random);
+            offspring[i] = child1;
+            if (i + 1 < offspring.Length)
+                offspring[i + 1] = child2;
+        }
+        
+        // Apply mutations
+        foreach (var tour in offspring)
+        {
+            mutation.Mutate(tour, _random);
+        }
+        
+        // Calculate best fitness from offspring
+        var bestFitness = double.MinValue;
+        foreach (var tour in offspring)
+        {
+            var fitness = _fitnessFunction.CalculateFitness(tour, _cities);
+            if (fitness > bestFitness)
+                bestFitness = fitness;
+        }
+        
+        return bestFitness;
     }
 
     [Benchmark]

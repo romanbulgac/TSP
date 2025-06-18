@@ -17,7 +17,7 @@ public sealed record City(
     public double DistanceTo(City other)
     {
         ArgumentNullException.ThrowIfNull(other);
-        
+
         var dx = X - other.X;
         var dy = Y - other.Y;
         return Math.Sqrt(dx * dx + dy * dy);
@@ -31,7 +31,7 @@ public sealed record City(
     public double SquaredDistanceTo(City other)
     {
         ArgumentNullException.ThrowIfNull(other);
-        
+
         var dx = X - other.X;
         var dy = Y - other.Y;
         return dx * dx + dy * dy;

@@ -51,4 +51,31 @@ public sealed class TspHub : Hub
     {
         return Context.ConnectionId;
     }
+
+    /// <summary>
+    /// Requests pausing the current algorithm execution
+    /// </summary>
+    public async Task RequestPause()
+    {
+        await Clients.Caller.SendAsync("PauseRequested", Context.ConnectionId);
+    }
+
+    /// <summary>
+    /// Requests resuming algorithm execution from a specific state
+    /// </summary>
+    /// <param name="sessionId">Session ID to resume from</param>
+    public async Task RequestResume(string sessionId)
+    {
+        await Clients.Caller.SendAsync("ResumeRequested", sessionId, Context.ConnectionId);
+    }
+
+    /// <summary>
+    /// Notifies clients about state save completion
+    /// </summary>
+    /// <param name="sessionId">The saved session ID</param>
+    /// <param name="generation">Current generation when saved</param>
+    public async Task NotifyStateSaved(string sessionId, int generation)
+    {
+        await Clients.All.SendAsync("StateSaved", sessionId, generation, Context.ConnectionId);
+    }
 }

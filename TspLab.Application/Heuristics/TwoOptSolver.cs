@@ -30,10 +30,10 @@ public sealed class TwoOptSolver : ITspSolver
     public async Task<Tour> SolveAsync(City[] cities, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cities);
-        
+
         if (cities.Length == 0)
             throw new ArgumentException("Cannot solve TSP with no cities", nameof(cities));
-        
+
         if (cities.Length <= 2)
         {
             // For trivial cases, return the simple tour
@@ -44,10 +44,10 @@ public sealed class TwoOptSolver : ITspSolver
 
         // Start with Nearest Neighbor solution
         var initialTour = await _nearestNeighborSolver.SolveAsync(cities, cancellationToken);
-        
+
         // Apply 2-opt improvements
         var improvedTour = await Task.Run(() => ApplyTwoOptImprovement(cities, initialTour, cancellationToken), cancellationToken);
-        
+
         return improvedTour;
     }
 
@@ -80,7 +80,7 @@ public sealed class TwoOptSolver : ITspSolver
                         continue; // Skip if it would just reverse the entire tour
 
                     var newDistance = CalculateNewDistanceAfter2Opt(cities, currentTour, i, j, currentDistance);
-                    
+
                     if (newDistance < currentDistance)
                     {
                         // Apply the 2-opt swap
@@ -109,7 +109,7 @@ public sealed class TwoOptSolver : ITspSolver
     private static double CalculateNewDistanceAfter2Opt(City[] cities, int[] tour, int i, int j, double currentDistance)
     {
         var cityCount = tour.Length;
-        
+
         // Get the four cities involved in the 2-opt swap
         var city1 = cities[tour[(i - 1 + cityCount) % cityCount]]; // City before the segment
         var city2 = cities[tour[i]];                                // First city of segment
@@ -119,7 +119,7 @@ public sealed class TwoOptSolver : ITspSolver
         // Calculate the change in distance
         var oldDistance = city1.DistanceTo(city2) + city3.DistanceTo(city4);
         var newDistance = city1.DistanceTo(city3) + city2.DistanceTo(city4);
-        
+
         return currentDistance - oldDistance + newDistance;
     }
 
@@ -149,13 +149,13 @@ public sealed class TwoOptSolver : ITspSolver
     private static double CalculateTourDistance(City[] cities, int[] tour)
     {
         var totalDistance = 0.0;
-        
+
         for (var i = 0; i < tour.Length; i++)
         {
             var nextIndex = (i + 1) % tour.Length;
             totalDistance += cities[tour[i]].DistanceTo(cities[tour[nextIndex]]);
         }
-        
+
         return totalDistance;
     }
 }

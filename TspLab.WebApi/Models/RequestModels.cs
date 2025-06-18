@@ -44,3 +44,25 @@ public readonly record struct GenerateClusteredCitiesRequest(
     int Count,
     int ClusterCount = 3,
     int? Seed = null);
+
+/// <summary>
+/// Request model for solving TSP using Simulated Annealing
+/// </summary>
+/// <param name="Cities">Array of cities to visit</param>
+/// <param name="Config">SA algorithm configuration</param>
+/// <param name="ConnectionId">SignalR connection ID for targeted updates (optional)</param>
+public readonly record struct SaSolveRequest(
+    City[] Cities,
+    SimulatedAnnealingConfig? Config,
+    string? ConnectionId = null);
+
+/// <summary>
+/// Request model for resuming algorithm execution from saved state
+/// </summary>
+/// <param name="SessionId">Session ID of the saved state</param>
+/// <param name="ConnectionId">SignalR connection ID for targeted updates (optional)</param>
+public readonly record struct ResumeRequest(
+    string SessionId,
+    string? ConnectionId = null);
+
+

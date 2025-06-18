@@ -33,7 +33,7 @@ public sealed class CycleCrossover : ICrossover
 
             // Find cycle starting from this position
             var cycle = FindCycle(parent1, parent2, start);
-            
+
             // Mark all positions in cycle as visited
             foreach (var pos in cycle)
                 visited[pos] = true;
@@ -71,7 +71,7 @@ public sealed class CycleCrossover : ICrossover
         {
             cycle.Add(current);
             var cityAtCurrent = parent1[current];
-            
+
             // Find where this city appears in parent2
             current = -1;
             for (int i = 0; i < parent2.Length; i++)

@@ -9,6 +9,7 @@
 @inject SignalRService SignalRService
 @inject IJSRuntime JSRuntime
 @inject IEnumerable<ITspSolver> TspSolvers
+@inject TspLibDataService TspLibDataService
 @implements IAsyncDisposable
 
 <div class="min-h-screen bg-gray-50">
@@ -45,6 +46,7 @@
                         <div class="border rounded-lg p-4">
                             <h3 class="font-medium text-gray-900 mb-3">Test Problems</h3>
                             <div class="space-y-3">
+                                <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Standard Problems</div>
                                 @foreach (var problem in testProblems)
                                 {
                                     <label class="flex items-center">
@@ -52,6 +54,22 @@
                                                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                                         <span class="ml-2 text-sm">@problem.Name (@problem.CityCount cities)</span>
                                     </label>
+                                }
+                                
+                                @if (tspLibProblems.Any())
+                                {
+                                    <div class="text-xs font-medium text-green-600 uppercase tracking-wide mt-4">TSPLIB Problems</div>
+                                    @foreach (var problem in tspLibProblems)
+                                    {
+                                        <label class="flex items-center">
+                                            <input type="checkbox" @bind="problem.IsSelected" 
+                                                   class="rounded border-gray-300 text-green-600 focus:ring-green-500" />
+                                            <span class="ml-2 text-sm">
+                                                @problem.Name (@problem.CityCount cities)
+                                                <span class="text-xs text-gray-500">- MDS Stress: @problem.MdsStress.ToString("F4")</span>
+                                            </span>
+                                        </label>
+                                    }
                                 }
                             </div>
                         </div>
@@ -195,14 +213,16 @@
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div class="bg-white rounded-lg shadow-sm border p-6">
                                 <h3 class="text-lg font-semibold text-gray-900 mb-4">Distance Comparison</h3>
-                                <canvas id="distanceComparisonChart" width="400" height="300" 
-                                        class="w-full h-auto"></canvas>
+                                <div class="benchmark-chart-container">
+                                    <canvas id="distanceComparisonChart" width="800" height="350"></canvas>
+                                </div>
                             </div>
                             
                             <div class="bg-white rounded-lg shadow-sm border p-6">
                                 <h3 class="text-lg font-semibold text-gray-900 mb-4">Time Comparison</h3>
-                                <canvas id="timeComparisonChart" width="400" height="300" 
-                                        class="w-full h-auto"></canvas>
+                                <div class="benchmark-chart-container">
+                                    <canvas id="timeComparisonChart" width="800" height="350"></canvas>
+                                </div>
                             </div>
                         </div>
                     }
@@ -266,6 +286,7 @@
     private int populationSize = 50;
 
     private List<TestProblem> testProblems = new();
+    private List<TspLibTestProblem> tspLibProblems = new();
     private List<AlgorithmConfig> algorithmConfigs = new();
     private List<AlgorithmSelection> availableAlgorithms = new();
     private List<BenchmarkResult> benchmarkResults = new();
@@ -299,6 +320,10 @@
             
             InitializeTestProblems();
             InitializeAlgorithmConfigs();
+            LoadTspLibProblems();
+            
+            // Subscribe to TSPLIB data changes
+            TspLibDataService.OnDataChanged += OnTspLibDataChanged;
         }
         catch (Exception ex)
         {
@@ -327,7 +352,7 @@
 
         foreach (var crossover in availableStrategies.Value.Crossovers)
         {
-            foreach (var mutation in availableStrategies.Value.Mutations.Take(2)) // Limit combinations
+            foreach (var mutation in availableStrategies.Value.Mutations) // Show all combinations
             {
                 algorithmConfigs.Add(new AlgorithmConfig
                 {
@@ -340,6 +365,17 @@
         }
     }
 
+    private void LoadTspLibProblems()
+    {
+        tspLibProblems = TspLibDataService.GetTspLibProblems().ToList();
+    }
+
+    private void OnTspLibDataChanged()
+    {
+        LoadTspLibProblems();
+        InvokeAsync(StateHasChanged);
+    }
+
     private async Task StartBenchmark()
     {
         if (isBenchmarking) return;
@@ -350,13 +386,14 @@
         detailedResults.Clear();
         
         var selectedProblems = testProblems.Where(p => p.IsSelected).ToList();
+        var selectedTspLibProblems = tspLibProblems.Where(p => p.IsSelected).ToList();
         var selectedAlgorithms = availableAlgorithms.Where(a => a.IsSelected).ToList();
         var selectedConfigs = algorithmConfigs.Where(c => c.IsSelected).ToList();
         
-        var totalRuns = selectedProblems.Count * (selectedAlgorithms.Count + selectedConfigs.Count) * runsPerConfig;
+        var totalRuns = (selectedProblems.Count + selectedTspLibProblems.Count) * (selectedAlgorithms.Count + selectedConfigs.Count) * runsPerConfig;
         var completedRuns = 0;
 
-        AddLogEntry($"Starting benchmark: {selectedProblems.Count} problems × {selectedAlgorithms.Count + selectedConfigs.Count} algorithms × {runsPerConfig} runs = {totalRuns} total runs");
+        AddLogEntry($"Starting benchmark: {selectedProblems.Count + selectedTspLibProblems.Count} problems × {selectedAlgorithms.Count + selectedConfigs.Count} algorithms × {runsPerConfig} runs = {totalRuns} total runs");
 
         try
         {
@@ -481,6 +518,132 @@
                 if (!isBenchmarking) break;
             }
 
+            // Process TSPLIB problems
+            foreach (var tspLibProblem in selectedTspLibProblems)
+            {
+                var cities = tspLibProblem.Cities;
+                
+                // Run individual algorithms
+                foreach (var solver in selectedAlgorithms)
+                {
+                    var results = new List<double>();
+                    var times = new List<double>();
+                    
+                    for (int run = 1; run <= runsPerConfig; run++)
+                    {
+                        currentBenchmarkStatus = $"Running {tspLibProblem.Name} with {solver.Name} (Run {run}/{runsPerConfig})";
+                        StateHasChanged();
+
+                        var startTime = DateTime.Now;
+                        var bestDistance = await RunSingleAlgorithmBenchmark(cities, solver.Solver);
+                        var endTime = DateTime.Now;
+                        var duration = (endTime - startTime).TotalSeconds;
+
+                        results.Add(bestDistance);
+                        times.Add(duration);
+                        
+                        detailedResults.Add(new DetailedResult
+                        {
+                            AlgorithmName = solver.Name,
+                            ProblemName = tspLibProblem.Name,
+                            RunNumber = run,
+                            FinalDistance = bestDistance,
+                            TimeSeconds = duration
+                        });
+
+                        completedRuns++;
+                        benchmarkProgress = (double)completedRuns / totalRuns;
+                        
+                        AddLogEntry($"Completed {tspLibProblem.Name} with {solver.Name} run {run}: {bestDistance:F2}");
+                        
+                        if (!isBenchmarking) break;
+                    }
+
+                    if (!isBenchmarking) break;
+
+                    // Add benchmark result summary for this algorithm
+                    benchmarkResults.Add(new BenchmarkResult
+                    {
+                        AlgorithmName = solver.Name,
+                        ProblemName = tspLibProblem.Name,
+                        BestDistance = results.Min(),
+                        WorstDistance = results.Max(),
+                        AverageDistance = results.Average(),
+                        BestTime = times.Min(),
+                        AverageTime = times.Average(),
+                        StandardDeviation = CalculateStandardDeviation(results),
+                        SuccessRate = CalculateSuccessRate(results, results.Min() * 1.1) // Within 10% of best
+                    });
+                }
+                
+                // Run GA variants for TSPLIB problems
+                foreach (var algorithmConfig in selectedConfigs)
+                {
+                    var results = new List<double>();
+                    var times = new List<double>();
+                    
+                    for (int run = 1; run <= runsPerConfig; run++)
+                    {
+                        currentBenchmarkStatus = $"Running {tspLibProblem.Name} with {algorithmConfig.Name} (Run {run}/{runsPerConfig})";
+                        StateHasChanged();
+
+                        var config = new GeneticAlgorithmConfig
+                        {
+                            PopulationSize = populationSize,
+                            MaxGenerations = maxGenerations,
+                            MutationRate = 0.02,
+                            ElitismRate = 0.1,
+                            CrossoverName = algorithmConfig.CrossoverName,
+                            MutationName = algorithmConfig.MutationName
+                        };
+
+                        var startTime = DateTime.Now;
+                        var bestDistance = await RunSingleBenchmark(cities, config);
+                        var endTime = DateTime.Now;
+                        var duration = (endTime - startTime).TotalSeconds;
+
+                        results.Add(bestDistance);
+                        times.Add(duration);
+                        
+                        detailedResults.Add(new DetailedResult
+                        {
+                            AlgorithmName = algorithmConfig.Name,
+                            ProblemName = tspLibProblem.Name,
+                            RunNumber = run,
+                            FinalDistance = bestDistance,
+                            TimeSeconds = duration
+                        });
+
+                        completedRuns++;
+                        benchmarkProgress = (double)completedRuns / totalRuns;
+                        
+                        AddLogEntry($"Completed {tspLibProblem.Name} with {algorithmConfig.Name} run {run}: {bestDistance:F2}");
+                        
+                        if (!isBenchmarking) break;
+                    }
+
+                    if (!isBenchmarking) break;
+
+                    // Calculate statistics for this algorithm-problem combination
+                    var benchmarkResult = new BenchmarkResult
+                    {
+                        AlgorithmName = algorithmConfig.Name,
+                        ProblemName = tspLibProblem.Name,
+                        BestDistance = results.Min(),
+                        AverageDistance = results.Average(),
+                        WorstDistance = results.Max(),
+                        BestTime = times.Min(),
+                        AverageTime = times.Average(),
+                        StandardDeviation = CalculateStandardDeviation(results),
+                        SuccessRate = CalculateSuccessRate(results, results.Min() * 1.1) // Within 10% of best
+                    };
+
+                    benchmarkResults.Add(benchmarkResult);
+                }
+
+                if (!isBenchmarking) break;
+            }
+
             if (isBenchmarking)
             {
                 AddLogEntry($"Benchmark completed! Total runs: {completedRuns}");
@@ -561,6 +724,32 @@
         }
         
         return Task.FromResult(cities);
+    }
+
+    private async Task<double> RunSingleAlgorithmBenchmark(City[] cities, ITspSolver solver)
+    {
+        try
+        {
+            var tour = await solver.SolveAsync(cities);
+            
+            // Calculate the tour distance
+            double totalDistance = 0;
+            for (int i = 0; i < tour.Cities.Length; i++)
+            {
+                var fromIndex = tour.Cities[i];
+                var toIndex = tour.Cities[(i + 1) % tour.Cities.Length];
+                var fromCity = cities[fromIndex];
+                var toCity = cities[toIndex];
+                totalDistance += fromCity.DistanceTo(toCity);
+            }
+            
+            return totalDistance;
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error running {solver.Name}: {ex.Message}");
+            return double.MaxValue;
+        }
     }
 
     private async Task<double> RunSingleBenchmark(City[] cities, GeneticAlgorithmConfig config)
@@ -728,6 +917,7 @@
     {
         SignalRService.UnsubscribeFromResults(OnGAResultReceived);
         SignalRService.UnsubscribeFromAcoResults(OnAcoResultReceived);
+        TspLibDataService.OnDataChanged -= OnTspLibDataChanged;
         await SignalRService.DisposeAsync();
     }
 

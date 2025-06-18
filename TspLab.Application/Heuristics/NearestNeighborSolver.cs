@@ -20,13 +20,13 @@ public sealed class NearestNeighborSolver : ITspSolver
     public Task<Tour> SolveAsync(City[] cities, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cities);
-        
+
         if (cities.Length == 0)
             throw new ArgumentException("Cannot solve TSP with no cities", nameof(cities));
-        
+
         if (cities.Length == 1)
             return Task.FromResult(new Tour([0]));
-        
+
         return Task.FromResult(SolveInternal(cities));
     }
 
@@ -40,27 +40,27 @@ public sealed class NearestNeighborSolver : ITspSolver
         var cityCount = cities.Length;
         var visited = new bool[cityCount];
         var tourCities = new int[cityCount];
-        
+
         // Start from a random city
         var startCity = Random.Shared.Next(cityCount);
         var currentCity = startCity;
-        
+
         visited[currentCity] = true;
         tourCities[0] = currentCity;
-        
+
         // Visit remaining cities using nearest neighbor
         for (var step = 1; step < cityCount; step++)
         {
             var nearestCity = FindNearestUnvisitedCity(cities, currentCity, visited);
-            
+
             visited[nearestCity] = true;
             tourCities[step] = nearestCity;
             currentCity = nearestCity;
         }
-        
+
         var tour = new Tour(tourCities);
         tour.Distance = CalculateTourDistance(cities, tourCities);
-        
+
         return tour;
     }
 
@@ -76,7 +76,7 @@ public sealed class NearestNeighborSolver : ITspSolver
         var nearestCity = -1;
         var shortestDistance = double.MaxValue;
         var currentCity = cities[currentCityIndex];
-        
+
         for (var i = 0; i < cities.Length; i++)
         {
             if (!visited[i])
@@ -89,7 +89,7 @@ public sealed class NearestNeighborSolver : ITspSolver
                 }
             }
         }
-        
+
         return nearestCity;
     }
 
@@ -102,19 +102,19 @@ public sealed class NearestNeighborSolver : ITspSolver
     private static double CalculateTourDistance(City[] cities, int[] tourCities)
     {
         var totalDistance = 0.0;
-        
+
         // Calculate distance between consecutive cities
         for (var i = 0; i < tourCities.Length - 1; i++)
         {
             totalDistance += cities[tourCities[i]].DistanceTo(cities[tourCities[i + 1]]);
         }
-        
+
         // Add distance from last city back to first city
         if (tourCities.Length > 1)
         {
             totalDistance += cities[tourCities[^1]].DistanceTo(cities[tourCities[0]]);
         }
-        
+
         return totalDistance;
     }
 }

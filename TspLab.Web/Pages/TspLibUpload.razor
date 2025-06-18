@@ -1,0 +1,799 @@
+@page "/tsplib"
+@using TspLab.Domain.Entities
+@using TspLab.Domain.Models
+@using TspLab.Web.Services
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@using System.Text.RegularExpressions
+@inject TspApiService ApiService
+@inject IJSRuntime JSRuntime
+@inject TspLibDataService TspLibDataService
+@inject CityDataService CityDataService
+@inject NavigationManager Navigation
+
+<div class="min-h-screen bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center">
+                    <h1 class="text-2xl font-bold text-gray-900">TSPLIB File Upload</h1>
+                    <span class="ml-3 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                        Distance Matrix Import
+                    </span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            
+            <!-- Upload Panel -->
+            <div class="xl:col-span-1">
+                <div class="bg-white rounded-lg shadow-sm border p-6 sticky top-8">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-6">Upload TSPLIB File</h2>
+                    
+                    <!-- File Upload -->
+                    <div class="space-y-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Select File</label>
+                            <InputFile OnChange="HandleFileSelected" 
+                                      accept=".xml,.tsp,.atsp"
+                                      class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                            <p class="text-xs text-gray-500 mt-1">Supported formats: .xml, .tsp, .atsp (max 100MB)</p>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(selectedFileName))
+                        {
+                            <div class="border rounded-lg p-4 bg-gray-50">
+                                <h4 class="font-medium text-gray-900 mb-2">File Information</h4>
+                                <div class="text-sm space-y-1">
+                                    <div><span class="font-medium">Name:</span> @selectedFileName</div>
+                                    <div><span class="font-medium">Size:</span> @FormatFileSize(fileSize)</div>
+                                    @if (validationResult.IsValid)
+                                    {
+                                        <div class="text-green-600">
+                                            <span class="font-medium">✓ Valid TSPLIB file</span>
+                                        </div>
+                                        <div><span class="font-medium">Problem:</span> @validationResult.Name</div>
+                                        <div><span class="font-medium">Cities:</span> @validationResult.CityCount</div>
+                                        @if (!string.IsNullOrEmpty(validationResult.Description))
+                                        {
+                                            <div><span class="font-medium">Description:</span> @validationResult.Description</div>
+                                        }
+                                    }
+                                    else if (!string.IsNullOrEmpty(validationResult.ErrorMessage))
+                                    {
+                                        <div class="text-red-600">
+                                            <span class="font-medium">✗ Invalid file</span>
+                                        </div>
+                                        <div class="text-red-500 text-xs">@validationResult.ErrorMessage</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Process Button -->
+                        <div>
+                            <button @onclick="ProcessFile" 
+                                    disabled="@(!validationResult.IsValid || isProcessing)"
+                                    class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                @if (isProcessing) 
+                                { 
+                                    <span>Processing...</span> 
+                                } 
+                                else 
+                                { 
+                                    <span>Process with MDS</span> 
+                                }
+                            </button>
+                            <p class="text-xs text-gray-500 mt-1">
+                                Uses Multi-dimensional Scaling to reconstruct 2D coordinates from distance matrix
+                            </p>
+                        </div>
+
+                        @if (processedResult.CityCount > 0)
+                        {
+                            <div class="border rounded-lg p-4 bg-green-50">
+                                <h4 class="font-medium text-gray-900 mb-2">Processing Results</h4>
+                                <div class="text-sm space-y-1">
+                                    <div><span class="font-medium">Problem:</span> @processedResult.ProblemName</div>
+                                    <div><span class="font-medium">Cities Generated:</span> @processedResult.CityCount</div>
+                                    <div><span class="font-medium">MDS Stress:</span> @processedResult.MdsStress.ToString("F6")</div>
+                                    <div class="text-xs text-gray-500 mt-2">
+                                        Lower stress values indicate better coordinate reconstruction quality.
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Visualization and Results -->
+            <div class="xl:col-span-2">
+                <div class="space-y-6">
+                    
+                    <!-- City Visualization -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">City Visualization</h3>
+                        <div class="relative">
+                            <canvas id="cityCanvas" width="800" height="600" 
+                                    class="w-full border border-gray-200 rounded-lg bg-gray-50"></canvas>
+                        </div>
+                        @if (processedResult.CityCount > 0)
+                        {
+                            <div class="mt-4 flex space-x-4">
+                                <button @onclick="ExportCities" 
+                                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                                    Export Cities as JSON
+                                </button>
+                                <button @onclick="UseCitiesForSolver" 
+                                        class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                                    Use for TSP Solving
+                                </button>
+                                <button @onclick="AddToBenchmark" 
+                                        class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                                    Add to Benchmark
+                                </button>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Processing Log -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Processing Log</h3>
+                        <div class="h-40 overflow-y-auto bg-gray-50 rounded border p-3 font-mono text-xs">
+                            @if (processingLog.Any())
+                            {
+                                @foreach (var entry in processingLog.TakeLast(50))
+                                {
+                                    <div class="text-gray-700">@entry</div>
+                                }
+                            }
+                            else
+                            {
+                                <div class="text-gray-500">No processing activities yet...</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string selectedFileName = "";
+    private string fileContent = "";
+    private long fileSize = 0;
+    private bool isProcessing = false;
+    private TspLibValidationResult validationResult = new() { IsValid = false, Name = "", Description = "", CityCount = 0, FileName = "", ErrorMessage = null };
+    private TspLibProcessedResult processedResult = new() { ProblemName = "", Description = "", CityCount = 0, Cities = Array.Empty<City>(), MdsStress = 0.0 };
+    private List<string> processingLog = new();
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            selectedFileName = file.Name;
+            fileSize = file.Size;
+            
+            AddLogEntry($"File selected: {selectedFileName} ({FormatFileSize(fileSize)})");
+            await LogMemoryUsage("before file loading");
+
+            // Check if file is too large for current available memory
+            var estimatedMemoryNeeded = fileSize * 3; // File + string + processing overhead
+            var memoryWarningThreshold = 50 * 1024 * 1024; // 50MB
+            
+            if (fileSize > memoryWarningThreshold)
+            {
+                AddLogEntry($"⚠️ Large file detected - estimated memory needed: {FormatFileSize(estimatedMemoryNeeded)}");
+                AddLogEntry("Using memory-optimized loading strategy...");
+            }
+
+            // For large files, validate without loading entire content into memory
+            if (fileSize > 10 * 1024 * 1024) // 10MB threshold
+            {
+                AddLogEntry("Large file detected - using streaming validation...");
+                await ValidateFileStreaming(file);
+            }
+            else
+            {
+                // Small files can be loaded normally
+                using var stream = file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
+                using var reader = new StreamReader(stream);
+                fileContent = await reader.ReadToEndAsync();
+
+                AddLogEntry($"File content loaded: {fileContent.Length} characters");
+                await LogMemoryUsage("after file loading");
+                await ValidateFile();
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error reading file: {ex.Message}");
+            if (ex.Message.Contains("memory") || ex.Message.Contains("out of memory"))
+            {
+                AddLogEntry("💡 Tip: Try closing other browser tabs or use a smaller file");
+                AddLogEntry("💡 Alternatively, split large TSPLIB files into smaller parts");
+            }
+            validationResult = new() { IsValid = false, Name = "", Description = "", CityCount = 0, FileName = selectedFileName, ErrorMessage = ex.Message };
+        }
+    }
+
+    private async Task ValidateFile()
+    {
+        try
+        {
+            AddLogEntry("Validating TSPLIB file format...");
+            var result = await ApiService.ValidateTspLibFileAsync(selectedFileName, fileContent);
+            
+            if (result != null)
+            {
+                validationResult = result;
+                if (validationResult.IsValid)
+                {
+                    AddLogEntry($"✓ Valid TSPLIB file: {validationResult.Name} ({validationResult.CityCount} cities)");
+                }
+                else
+                {
+                    AddLogEntry($"✗ Invalid TSPLIB file: {validationResult.ErrorMessage}");
+                }
+            }
+            else
+            {
+                validationResult = new TspLibValidationResult 
+                { 
+                    IsValid = false, 
+                    Name = "", 
+                    Description = "", 
+                    CityCount = 0, 
+                    FileName = selectedFileName, 
+                    ErrorMessage = "Failed to validate file" 
+                };
+                AddLogEntry("✗ Failed to validate file");
+            }
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error validating file: {ex.Message}");
+            validationResult = new TspLibValidationResult 
+            { 
+                IsValid = false, 
+                Name = "", 
+                Description = "", 
+                CityCount = 0, 
+                FileName = selectedFileName, 
+                ErrorMessage = ex.Message 
+            };
+        }
+    }
+
+    private async Task ProcessFile()
+    {
+        if (!validationResult.IsValid)
+            return;
+
+        try
+        {
+            isProcessing = true;
+            StateHasChanged();
+
+            AddLogEntry("Starting TSPLIB file processing with MDS...");
+            
+            // For large files, we need to read and process more carefully
+            if (string.IsNullOrEmpty(fileContent))
+            {
+                AddLogEntry("Processing large file - reading in memory-efficient mode...");
+                await ProcessLargeFile();
+            }
+            else
+            {
+                // Small file - process normally
+                var result = await ApiService.UploadTspLibFileAsync(selectedFileName, fileContent);
+                if (result != null)
+                {
+                    processedResult = result;
+                    AddLogEntry($"✓ Successfully processed: {processedResult.CityCount} cities generated");
+                    AddLogEntry($"  MDS Stress: {processedResult.MdsStress:F6} (lower is better)");
+                    
+                    // Draw cities on canvas
+                    await DrawCities();
+                }
+                else
+                {
+                    AddLogEntry("✗ Failed to process TSPLIB file");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error processing file: {ex.Message}");
+        }
+        finally
+        {
+            isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ProcessLargeFile()
+    {
+        try
+        {
+            // Force garbage collection before processing large file
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            
+            await LogMemoryUsage("before large file processing");
+            
+            AddLogEntry("Reading large file with memory optimization...");
+            
+            // Try using the more efficient multipart approach first
+            try
+            {
+                AddLogEntry("Attempting memory-efficient chunked reading...");
+                
+                // Read file in smaller chunks to avoid memory issues
+                const int chunkSize = 512 * 1024; // 512KB chunks (smaller for better memory management)
+                var totalSize = fileSize;
+                var chunks = new List<string>();
+                long bytesRead = 0;
+                
+                AddLogEntry($"Processing file in {chunkSize / 1024}KB chunks...");
+                
+                // Use JavaScript to read file in chunks
+                var chunkCount = (int)Math.Ceiling((double)totalSize / chunkSize);
+                
+                for (int i = 0; i < chunkCount; i++)
+                {
+                    var start = i * chunkSize;
+                    var end = Math.Min(start + chunkSize, totalSize);
+                    
+                    try
+                    {
+                        var chunk = await JSRuntime.InvokeAsync<string>("readFileChunk", start, end);
+                        if (string.IsNullOrEmpty(chunk))
+                        {
+                            AddLogEntry($"Warning: Empty chunk {i}, trying alternative method");
+                            break;
+                        }
+                        
+                        chunks.Add(chunk);
+                        bytesRead = end;
+                        
+                        // Report progress
+                        var progress = (double)bytesRead / totalSize * 100;
+                        AddLogEntry($"Reading... {progress:F1}% ({FormatFileSize(bytesRead)}/{FormatFileSize(totalSize)})");
+                        
+                        // Force UI update
+                        StateHasChanged();
+                        await Task.Delay(10); // Small delay to allow UI update
+                        
+                        // Trigger garbage collection every 5 chunks to manage memory
+                        if (i % 5 == 0 && i > 0)
+                        {
+                            GC.Collect();
+                            await LogMemoryUsage($"after chunk {i}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AddLogEntry($"Error reading chunk {i}: {ex.Message}");
+                        throw;
+                    }
+                }
+                
+                if (chunks.Count == chunkCount)
+                {
+                    AddLogEntry("Combining file chunks...");
+                    var fullContent = string.Join("", chunks);
+                    
+                    // Clear chunks to free memory
+                    chunks.Clear();
+                    chunks = null;
+                    GC.Collect();
+                    
+                    AddLogEntry($"File content assembled: {fullContent.Length} characters");
+                    await LogMemoryUsage("after content assembly");
+                    
+                    // Send to API using multipart for better memory efficiency
+                    AddLogEntry("Uploading via memory-efficient multipart method...");
+                    var result = await ApiService.UploadTspLibFileMultipartAsync(selectedFileName, fullContent);
+                    
+                    // Clear content immediately after sending
+                    fullContent = null;
+                    GC.Collect();
+                    
+                    if (result != null)
+                    {
+                        processedResult = result;
+                        AddLogEntry($"✓ Successfully processed: {processedResult.CityCount} cities generated");
+                        AddLogEntry($"  MDS Stress: {processedResult.MdsStress:F6} (lower is better)");
+                        
+                        // Draw cities on canvas
+                        await DrawCities();
+                    }
+                    else
+                    {
+                        AddLogEntry("✗ Failed to process TSPLIB file via multipart upload");
+                    }
+                }
+                else
+                {
+                    throw new Exception("Failed to read all file chunks");
+                }
+            }
+            catch (Exception chunkError)
+            {
+                AddLogEntry($"Chunked reading failed: {chunkError.Message}");
+                AddLogEntry("Falling back to standard file reading with smaller buffer...");
+                
+                // Fallback: try to read the file normally but with memory management
+                await ProcessLargeFileFallback();
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error in large file processing: {ex.Message}");
+            if (ex.Message.Contains("memory") || ex.Message.Contains("out of memory"))
+            {
+                AddLogEntry("💡 Memory exhausted! Try these solutions:");
+                AddLogEntry("   • Close other browser tabs and applications");
+                AddLogEntry("   • Use a smaller file (split large files if possible)");
+                AddLogEntry("   • Try using Chrome with --max-old-space-size=8192 flag");
+                AddLogEntry("   • Consider processing the file on a desktop application");
+            }
+            throw;
+        }
+    }
+
+    private async Task ProcessLargeFileFallback()
+    {
+        try
+        {
+            AddLogEntry("Using fallback method with aggressive memory management...");
+            
+            // Read file in very small increments
+            await using var stream = await JSRuntime.InvokeAsync<IJSStreamReference>("getFileStream");
+            await using var dotNetStream = await stream.OpenReadStreamAsync(maxAllowedSize: 100 * 1024 * 1024);
+            
+            var buffer = new byte[64 * 1024]; // 64KB buffer
+            var chunks = new List<string>();
+            int totalBytesRead = 0;
+            
+            while (true)
+            {
+                var bytesRead = await dotNetStream.ReadAsync(buffer, 0, buffer.Length);
+                if (bytesRead == 0) break;
+                
+                var chunk = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                chunks.Add(chunk);
+                totalBytesRead += bytesRead;
+                
+                var progress = (double)totalBytesRead / fileSize * 100;
+                AddLogEntry($"Fallback reading... {progress:F1}%");
+                
+                // Aggressive memory management
+                if (chunks.Count % 10 == 0)
+                {
+                    GC.Collect();
+                    StateHasChanged();
+                    await Task.Delay(5);
+                }
+            }
+            
+            AddLogEntry("Assembling content from fallback method...");
+            var fullContent = string.Join("", chunks);
+            chunks.Clear();
+            chunks = null;
+            GC.Collect();
+            
+            // Send to API
+            var result = await ApiService.UploadTspLibFileMultipartAsync(selectedFileName, fullContent);
+            fullContent = null;
+            GC.Collect();
+            
+            if (result != null)
+            {
+                processedResult = result;
+                AddLogEntry($"✓ Successfully processed: {processedResult.CityCount} cities generated");
+                AddLogEntry($"  MDS Stress: {processedResult.MdsStress:F6} (lower is better)");
+                await DrawCities();
+            }
+            else
+            {
+                AddLogEntry("✗ Failed to process TSPLIB file via fallback method");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Fallback method also failed: {ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task DrawCities()
+    {
+        if (processedResult.Cities.Length == 0) return;
+
+        try
+        {
+            var cityData = processedResult.Cities.Select(c => new { x = c.X, y = c.Y }).ToArray();
+            await JSRuntime.InvokeVoidAsync("drawCities", "cityCanvas", cityData);
+            AddLogEntry($"Cities visualized on canvas");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error drawing cities: {ex.Message}");
+        }
+    }
+
+    private async Task ExportCities()
+    {
+        if (processedResult.Cities.Length == 0) return;
+
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(processedResult.Cities, new System.Text.Json.JsonSerializerOptions 
+            { 
+                WriteIndented = true 
+            });
+            
+            await JSRuntime.InvokeVoidAsync("downloadFile", $"{processedResult.ProblemName}_cities.json", json, "application/json");
+            AddLogEntry($"Cities exported as JSON");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error exporting cities: {ex.Message}");
+        }
+    }
+
+    private void UseCitiesForSolver()
+    {
+        try
+        {
+            if (processedResult.CityCount > 0 && processedResult.Cities.Any())
+            {
+                // Transfer cities to the CityDataService
+                var sourceName = !string.IsNullOrEmpty(processedResult.ProblemName) 
+                    ? processedResult.ProblemName 
+                    : selectedFileName ?? "TSPLIB File";
+                
+                CityDataService.SetCities(processedResult.Cities.ToArray(), sourceName);
+                
+                AddLogEntry($"Successfully transferred {processedResult.CityCount} cities to solver");
+                AddLogEntry($"Source: {sourceName}");
+                
+                // Navigate to the solver page
+                Navigation.NavigateTo("/solver");
+            }
+            else
+            {
+                AddLogEntry("Error: No cities available to transfer to solver");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error transferring cities to solver: {ex.Message}");
+        }
+    }
+
+    private void AddToBenchmark()
+    {
+        try
+        {
+            if (processedResult.CityCount > 0 && !string.IsNullOrEmpty(processedResult.ProblemName))
+            {
+                // Add the TSPLIB problem to the shared data service
+                TspLibDataService.AddTspLibProblem(processedResult);
+                AddLogEntry($"✓ Added '{processedResult.ProblemName}' to benchmark test problems");
+                
+                // Navigate to benchmark page
+                Navigation.NavigateTo("/benchmark");
+            }
+            else
+            {
+                AddLogEntry("✗ No valid TSPLIB data to add to benchmark");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error adding to benchmark: {ex.Message}");
+        }
+    }
+
+    private void AddLogEntry(string message)
+    {
+        var timestamp = DateTime.Now.ToString("HH:mm:ss");
+        processingLog.Add($"[{timestamp}] {message}");
+        StateHasChanged();
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024)
+            return $"{bytes} B";
+        else if (bytes < 1024 * 1024)
+            return $"{bytes / 1024.0:F1} KB";
+        else
+            return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+
+    private async Task ValidateFileStreaming(IBrowserFile file)
+    {
+        try
+        {
+            AddLogEntry("Reading file headers for validation...");
+            
+            // Read only first few KB to validate TSPLIB format
+            const int headerSize = 4096; // 4KB should be enough for headers
+            using var stream = file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
+            var buffer = new byte[headerSize];
+            var bytesRead = await stream.ReadAsync(buffer, 0, headerSize);
+            
+            var headerContent = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesRead);
+            
+            // Check for XML TSPLIB format first
+            bool isXmlFormat = headerContent.Contains("<?xml") && 
+                              headerContent.Contains("<travellingSalesmanProblemInstance>");
+            
+            // Check for classic TSPLIB format
+            bool isClassicFormat = headerContent.Contains("NAME") && 
+                                  (headerContent.Contains("TYPE") && headerContent.Contains("TSP") || 
+                                   headerContent.Contains("DIMENSION") ||
+                                   headerContent.Contains("EDGE_WEIGHT_TYPE"));
+            
+            if (isXmlFormat || isClassicFormat)
+            {
+                string name = "Unknown";
+                string description = "";
+                int cityCount = 0;
+                
+                if (isXmlFormat)
+                {
+                    // Parse XML format
+                    AddLogEntry("Detected XML TSPLIB format");
+                    
+                    // Extract name from <n> tag first (primary format) - handle whitespace and newlines
+                    var nameMatch = System.Text.RegularExpressions.Regex.Match(headerContent, @"<n>\s*([^<\s]+)\s*</n>", RegexOptions.IgnoreCase | RegexOptions.Multiline);
+                    if (nameMatch.Success)
+                        name = nameMatch.Groups[1].Value.Trim();
+                    
+                    // Also try <name> tag as fallback (in case there are different XML formats)
+                    if (string.IsNullOrEmpty(name) || name == "Unknown")
+                    {
+                        var nameTagMatch = System.Text.RegularExpressions.Regex.Match(headerContent, @"<name>\s*([^<\s]+)\s*</name>", RegexOptions.IgnoreCase | RegexOptions.Multiline);
+                        if (nameTagMatch.Success)
+                            name = nameTagMatch.Groups[1].Value.Trim();
+                    }
+                    
+                    // Extract description from <description> tag (handle whitespace and newlines)
+                    var descMatch = System.Text.RegularExpressions.Regex.Match(headerContent, @"<description>\s*([^<]+?)\s*</description>", RegexOptions.IgnoreCase | RegexOptions.Multiline);
+                    if (descMatch.Success)
+                        description = descMatch.Groups[1].Value.Trim();
+                    
+                    // For XML format, we can't easily determine city count from headers
+                    // So we'll consider it valid if we have name and XML structure
+                    if (!string.IsNullOrEmpty(name) && name != "Unknown")
+                    {
+                        // Try to extract number from name (many TSPLIB files have numbers in names)
+                        var numberMatch = System.Text.RegularExpressions.Regex.Match(name, @"(\d+)");
+                        if (numberMatch.Success && int.TryParse(numberMatch.Groups[1].Value, out var extractedCount))
+                        {
+                            cityCount = extractedCount;
+                            AddLogEntry($"Estimated city count from name: {cityCount}");
+                        }
+                        else
+                        {
+                            // Set a placeholder value to mark as valid - actual count will be determined during processing
+                            cityCount = 1;
+                            AddLogEntry("City count will be determined during full processing");
+                        }
+                    }
+                }
+                else
+                {
+                    // Parse classic TSPLIB format
+                    AddLogEntry("Detected classic TSPLIB format");
+                    
+                    var lines = headerContent.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                    {
+                        var trimmed = line.Trim();
+                        if (trimmed.StartsWith("NAME"))
+                        {
+                            var parts = trimmed.Split(':', 2);
+                            if (parts.Length == 2) name = parts[1].Trim();
+                        }
+                        else if (trimmed.StartsWith("COMMENT"))
+                        {
+                            var parts = trimmed.Split(':', 2);
+                            if (parts.Length == 2) description = parts[1].Trim();
+                        }
+                        else if (trimmed.StartsWith("DIMENSION"))
+                        {
+                            var parts = trimmed.Split(':', 2);
+                            if (parts.Length == 2 && int.TryParse(parts[1].Trim(), out var dim))
+                                cityCount = dim;
+                        }
+                    }
+                }
+                
+                validationResult = new TspLibValidationResult
+                {
+                    IsValid = cityCount > 0 && !string.IsNullOrEmpty(name) && name != "Unknown",
+                    Name = name,
+                    Description = description,
+                    CityCount = cityCount,
+                    FileName = selectedFileName,
+                    ErrorMessage = (cityCount <= 0 || string.IsNullOrEmpty(name) || name == "Unknown") 
+                        ? "Could not extract required information from file headers" : null
+                };
+                
+                if (validationResult.IsValid)
+                {
+                    AddLogEntry($"✓ Valid TSPLIB file: {validationResult.Name} ({validationResult.CityCount} cities)");
+                    // Clear fileContent since we're not loading the full file
+                    fileContent = "";
+                }
+                else
+                {
+                    AddLogEntry($"✗ Invalid TSPLIB file: {validationResult.ErrorMessage}");
+                }
+            }
+            else
+            {
+                validationResult = new TspLibValidationResult
+                {
+                    IsValid = false,
+                    Name = "",
+                    Description = "",
+                    CityCount = 0,
+                    FileName = selectedFileName,
+                    ErrorMessage = "File does not appear to be a valid TSPLIB format"
+                };
+                AddLogEntry("✗ File does not appear to be a valid TSPLIB format");
+            }
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error in streaming validation: {ex.Message}");
+            validationResult = new TspLibValidationResult
+            {
+                IsValid = false,
+                Name = "",
+                Description = "",
+                CityCount = 0,
+                FileName = selectedFileName,
+                ErrorMessage = ex.Message
+            };
+        }
+    }
+
+    private async Task LogMemoryUsage(string context)
+    {
+        try
+        {
+            var memoryInfo = await JSRuntime.InvokeAsync<object>("getMemoryInfo");
+            if (memoryInfo != null)
+            {
+                AddLogEntry($"Memory ({context}): {memoryInfo}");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Memory monitoring failed: {ex.Message}");
+        }
+    }
+}

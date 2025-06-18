@@ -33,13 +33,13 @@ public sealed class GeneticAlgorithmSolver : ITspSolver
     public async Task<Tour> SolveAsync(City[] cities, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cities);
-        
+
         if (cities.Length == 0)
             throw new ArgumentException("Cannot solve TSP with no cities", nameof(cities));
-        
+
         if (cities.Length == 1)
             return new Tour([0]);
-        
+
         if (cities.Length == 2)
         {
             var trivialTour = new Tour([0, 1]);
@@ -49,10 +49,10 @@ public sealed class GeneticAlgorithmSolver : ITspSolver
 
         // Use default GA configuration optimized for quick results
         var config = CreateDefaultConfig(cities.Length);
-        
+
         Tour? bestTour = null;
         var bestDistance = double.MaxValue;
-        
+
         // Stream through generations and track the best solution
         await foreach (var result in _tspSolverService.SolveAsync(cities, config, cancellationToken))
         {
@@ -62,7 +62,7 @@ public sealed class GeneticAlgorithmSolver : ITspSolver
                 bestTour.Distance = result.BestDistance;
                 bestDistance = result.BestDistance;
             }
-            
+
             // Early termination if we find a very good solution
             if (result.BestFitness > 0.95) // High fitness indicates good solution
                 break;
@@ -82,7 +82,7 @@ public sealed class GeneticAlgorithmSolver : ITspSolver
         // Scale parameters based on problem size
         var populationSize = Math.Min(100, Math.Max(20, cityCount * 2));
         var maxGenerations = Math.Min(500, Math.Max(50, cityCount * 5));
-        
+
         return new GeneticAlgorithmConfig
         {
             PopulationSize = populationSize,

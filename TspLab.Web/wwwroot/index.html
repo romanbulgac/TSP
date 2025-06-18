@@ -154,10 +154,146 @@
         console.log('TSP Lab Application Starting...');
         console.log('Current URL:', window.location.href);
         console.log('User Agent:', navigator.userAgent);
-    </script>
-    
-    <!-- Custom TSP Visualization JavaScript -->
+    </script>    <!-- Custom TSP Visualization JavaScript -->
     <script src="js/tsp-visualization.js"></script>
+    
+    <!-- TwoOptMutation Test Script (for debugging) -->
+    <script src="js/test-twoopt.js"></script>
+      <!-- File Upload Utilities for Large Files -->
+    <script>
+        // Global variable to store the last selected file
+        let lastSelectedFile = null;
+        
+        // Function to get the current file input reference
+        window.getFileInput = () => {
+            return lastSelectedFile;
+        };
+        
+        // Function to get file stream
+        window.getFileStream = () => {
+            if (!lastSelectedFile) {
+                throw new Error('No file selected');
+            }
+            return lastSelectedFile.stream();
+        };
+        
+        // Function to read file chunk with better error handling
+        window.readFileChunk = (start, end) => {
+            return new Promise((resolve, reject) => {
+                if (!lastSelectedFile) {
+                    reject(new Error('No file selected'));
+                    return;
+                }
+                
+                try {
+                    const slice = lastSelectedFile.slice(start, end);
+                    const reader = new FileReader();
+                    
+                    reader.onload = (e) => {
+                        try {
+                            resolve(e.target.result);
+                        } catch (error) {
+                            reject(new Error('Failed to process chunk result'));
+                        }
+                    };
+                    
+                    reader.onerror = (e) => {
+                        reject(new Error(`Failed to read file chunk: ${e.target.error}`));
+                    };
+                    
+                    reader.onabort = (e) => {
+                        reject(new Error('File reading was aborted'));
+                    };
+                    
+                    // Add timeout for large chunks
+                    const timeout = setTimeout(() => {
+                        reader.abort();
+                        reject(new Error('File reading timeout'));
+                    }, 30000); // 30 seconds timeout
+                    
+                    reader.addEventListener('load', () => clearTimeout(timeout));
+                    reader.addEventListener('error', () => clearTimeout(timeout));
+                    
+                    reader.readAsText(slice);
+                } catch (error) {
+                    reject(new Error(`Error setting up file reader: ${error.message}`));
+                }
+            });
+        };
+        
+        // Override file input to capture file reference
+        document.addEventListener('DOMContentLoaded', function() {
+            // Monitor file input changes
+            document.addEventListener('change', function(e) {
+                if (e.target.type === 'file' && e.target.files.length > 0) {
+                    lastSelectedFile = e.target.files[0];
+                    console.log('File captured for chunked reading:', lastSelectedFile.name, lastSelectedFile.size);
+                    
+                    // Log memory before file selection
+                    const memInfo = window.getMemoryInfo();
+                    if (memInfo) {
+                        console.log('Memory before file selection:', memInfo);
+                    }
+                }
+            });
+        });
+        
+        // Memory management utilities
+        window.forceGarbageCollection = () => {
+            // Force garbage collection if available (Chrome with --enable-precise-memory-info)
+            if (window.gc) {
+                window.gc();
+                console.log('Manual garbage collection triggered');
+            }
+            
+            // Also try to release memory by creating pressure
+            try {
+                const temp = new Array(1000000).fill(0);
+                temp.length = 0;
+            } catch (e) {
+                console.log('Memory pressure creation failed:', e);
+            }
+        };
+        
+        // Monitor memory usage with better formatting
+        window.getMemoryInfo = () => {
+            if (performance.memory) {
+                const info = {
+                    used: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024),
+                    total: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024),
+                    limit: Math.round(performance.memory.jsHeapSizeLimit / 1024 / 1024)
+                };
+                
+                // Calculate percentage
+                info.usedPercent = Math.round((info.used / info.limit) * 100);
+                
+                return `${info.used}MB/${info.limit}MB (${info.usedPercent}%)`;
+            }
+            return 'Memory info not available';
+        };
+        
+        // Memory warning system
+        window.checkMemoryUsage = () => {
+            if (performance.memory) {
+                const used = performance.memory.usedJSHeapSize;
+                const limit = performance.memory.jsHeapSizeLimit;
+                const percentage = (used / limit) * 100;
+                
+                if (percentage > 80) {
+                    console.warn('High memory usage detected:', percentage.toFixed(1) + '%');
+                    return 'high';
+                } else if (percentage > 60) {
+                    console.log('Moderate memory usage:', percentage.toFixed(1) + '%');
+                    return 'moderate';
+                }
+                return 'normal';
+            }
+            return 'unknown';
+        };    </script>
+    
+    <!-- Frontend Integration Test Script -->
+    <script src="js/test-frontend-integration.js"></script>
+    
     <!-- Blazor WebAssembly -->
     <script src="_framework/blazor.webassembly.js"></script>
 </body>

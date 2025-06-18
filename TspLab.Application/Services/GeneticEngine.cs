@@ -10,22 +10,42 @@ using TspLab.Domain;
 namespace TspLab.Application.Services;
 
 /// <summary>
-/// Core genetic algorithm engine for solving TSP
+/// Core genetic algorithm engine for solving TSP with pause/resume support
 /// </summary>
 public sealed class GeneticEngine
 {
     private readonly ILogger<GeneticEngine> _logger;
-    private readonly Random _random;
+    private readonly IAlgorithmStateManager? _stateManager;
+    private Random _random;
 
-    public GeneticEngine(ILogger<GeneticEngine> logger)
+    public GeneticEngine(ILogger<GeneticEngine> logger, IAlgorithmStateManager? stateManager = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _stateManager = stateManager;
         _random = new Random();
     }
 
     /// <summary>
-    /// Runs the genetic algorithm with streaming results
+    /// Runs the genetic algorithm with streaming results (original method for backwards compatibility)
     /// </summary>
+    public async IAsyncEnumerable<GeneticAlgorithmResult> RunAsync(
+        City[] cities,
+        GeneticAlgorithmConfig config,
+        ICrossover crossover,
+        IMutation mutation,
+        IFitnessFunction fitnessFunction,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var result in RunWithStateAsync(null, cities, config, crossover, mutation, fitnessFunction, cancellationToken))
+        {
+            yield return result;
+        }
+    }
+
+    /// <summary>
+    /// Runs the genetic algorithm with pause/resume support
+    /// </summary>
+    /// <param name="resumeState">Optional state to resume from</param>
     /// <param name="cities">Array of cities to visit</param>
     /// <param name="config">GA configuration</param>
     /// <param name="crossover">Crossover operator</param>
@@ -33,7 +53,8 @@ public sealed class GeneticEngine
     /// <param name="fitnessFunction">Fitness function</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of generation results</returns>
-    public async IAsyncEnumerable<GeneticAlgorithmResult> RunAsync(
+    public async IAsyncEnumerable<GeneticAlgorithmResult> RunWithStateAsync(
+        GeneticAlgorithmState? resumeState,
         City[] cities,
         GeneticAlgorithmConfig config,
         ICrossover crossover,
@@ -49,30 +70,71 @@ public sealed class GeneticEngine
         if (!config.IsValid())
             throw new ArgumentException("Invalid configuration", nameof(config));
 
-        _logger.LogInformation("Starting GA with {PopulationSize} individuals, {MaxGenerations} generations",
-            config.PopulationSize, config.MaxGenerations);
+        // Initialize state
+        var sessionId = resumeState?.SessionId ?? Guid.NewGuid().ToString();
+        var stopwatch = resumeState != null ? Stopwatch.StartNew() : Stopwatch.StartNew();
+        var elapsedOffset = resumeState?.ElapsedMilliseconds ?? 0;
 
-        var stopwatch = Stopwatch.StartNew();
+        // Set random seed for reproducibility if provided
+        if (config.RandomSeed.HasValue)
+        {
+            _random = new Random(config.RandomSeed.Value);
+        }
+
         mutation.MutationRate = config.MutationRate;
 
-        // Initialize population
-        var population = InitializePopulation(cities.Length, config.PopulationSize);
-        
-        // Evaluate initial fitness
-        await EvaluatePopulation(population, cities, fitnessFunction);
-        
-        var bestTour = GetBestTour(population);
-        var convergenceHistory = new List<double>();
-        
-        // Tracking for stagnation detection
-        var lastImprovementGeneration = 0;
-        var lastBestFitness = bestTour.Fitness;
-        const double fitnessImprovementThreshold = 1e-6; // Minimum improvement considered significant
-        
-        int currentGeneration = 0;
+        Tour[] population;
+        Tour bestTour;
+        List<double> convergenceHistory;
+        int startGeneration;
+        int lastImprovementGeneration;
+        int generationsWithoutImprovement;
+
+        if (resumeState != null)
+        {
+            // Resume from saved state
+            _logger.LogInformation("Resuming GA from generation {Generation}", resumeState.CurrentGeneration);
+            
+            population = resumeState.Population.Tours.Select(t => t.ToTour()).ToArray();
+            bestTour = resumeState.BestTour?.ToTour() ?? GetBestTour(population);
+            convergenceHistory = new List<double>(resumeState.ConvergenceHistory);
+            startGeneration = resumeState.CurrentGeneration;
+            lastImprovementGeneration = resumeState.LastImprovementGeneration;
+            generationsWithoutImprovement = resumeState.GenerationsWithoutImprovement;
+            
+            _logger.LogInformation("Resumed with {PopulationSize} individuals, best fitness: {Fitness}", 
+                population.Length, bestTour.Fitness);
+        }
+        else
+        {
+            // Initialize new run
+            _logger.LogInformation("Starting new GA with {PopulationSize} individuals, {MaxGenerations} generations",
+                config.PopulationSize, config.MaxGenerations);
+
+            population = InitializePopulation(cities.Length, config.PopulationSize);
+            await EvaluatePopulation(population, cities, fitnessFunction);
+            
+            bestTour = GetBestTour(population);
+            convergenceHistory = new List<double>();
+            startGeneration = 0;
+            lastImprovementGeneration = 0;
+            generationsWithoutImprovement = 0;
+        }
+
+        const double fitnessImprovementThreshold = 1e-6;
+        int currentGeneration = startGeneration;
         bool completedEarly = false;
 
-        for (currentGeneration = 0; currentGeneration < config.MaxGenerations; currentGeneration++)
+        // Create checkpoint configuration
+        var checkpointConfig = new CheckpointConfig
+        {
+            EnableAutoCheckpoint = config.TrackStatistics,
+            CheckpointInterval = Math.Max(50, config.ProgressReportInterval * 2),
+            MaxCheckpoints = 5,
+            UseBrowserStorage = true
+        };
+
+        for (currentGeneration = startGeneration; currentGeneration < config.MaxGenerations; currentGeneration++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -81,17 +143,16 @@ public sealed class GeneticEngine
                 population, config, crossover, mutation, fitnessFunction, cities);
 
             population = newPopulation;
-            
+
             // Track best solution
             var currentBest = GetBestTour(population);
-            
+
             if (currentBest.Fitness - bestTour.Fitness > fitnessImprovementThreshold)
             {
                 bestTour = currentBest.Clone();
                 lastImprovementGeneration = currentGeneration;
-                lastBestFitness = bestTour.Fitness;
-                
-                _logger.LogDebug("Improvement found at generation {Generation}: fitness = {Fitness}", 
+
+                _logger.LogDebug("Improvement found at generation {Generation}: fitness = {Fitness}",
                     currentGeneration, bestTour.Fitness);
             }
 
@@ -99,12 +160,32 @@ public sealed class GeneticEngine
             convergenceHistory.Add(bestTour.Fitness);
 
             // Check for early termination conditions
-            var generationsWithoutImprovement = currentGeneration - lastImprovementGeneration;
-            var shouldStopDueToStagnation = config.StagnationLimit > 0 && 
+            generationsWithoutImprovement = currentGeneration - lastImprovementGeneration;
+            var shouldStopDueToStagnation = config.StagnationLimit > 0 &&
                                           generationsWithoutImprovement >= config.StagnationLimit;
 
-            // Check if this is the last generation (either due to max generations or early termination)
             var isLastGeneration = currentGeneration >= config.MaxGenerations - 1 || shouldStopDueToStagnation;
+
+            // Create checkpoint if enabled
+            if (_stateManager != null && checkpointConfig.EnableAutoCheckpoint && 
+                currentGeneration % checkpointConfig.CheckpointInterval == 0)
+            {
+                var checkpointState = CreateAlgorithmState(
+                    sessionId, currentGeneration, config, cities, population, bestTour, 
+                    convergenceHistory, elapsedOffset + stopwatch.ElapsedMilliseconds,
+                    generationsWithoutImprovement, lastImprovementGeneration,
+                    isLastGeneration ? AlgorithmStatus.Completed : AlgorithmStatus.Running);
+
+                try
+                {
+                    await _stateManager.CreateCheckpointAsync(checkpointState, checkpointConfig, cancellationToken);
+                    _logger.LogDebug("Created checkpoint at generation {Generation}", currentGeneration);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to create checkpoint at generation {Generation}", currentGeneration);
+                }
+            }
 
             // Yield current result
             var result = new GeneticAlgorithmResult(
@@ -113,38 +194,115 @@ public sealed class GeneticEngine
                 AverageFitness: avgFitness,
                 BestTour: bestTour.Cities.ToArray(),
                 BestDistance: bestTour.Distance,
-                ElapsedMilliseconds: stopwatch.ElapsedMilliseconds,
+                ElapsedMilliseconds: elapsedOffset + stopwatch.ElapsedMilliseconds,
                 IsComplete: isLastGeneration
             );
-            
+
             yield return result;
 
             // Early termination checks
             if (shouldStopDueToStagnation)
             {
-                _logger.LogInformation("Stopping due to stagnation: {Generations} generations without improvement", 
+                _logger.LogInformation("Stopping due to stagnation: {Generations} generations without improvement",
                     generationsWithoutImprovement);
                 completedEarly = true;
                 break;
             }
         }
 
-        // Only send final result if we didn't complete early (to avoid duplication)
-        if (!completedEarly && currentGeneration >= config.MaxGenerations)
+        // Save final state if state manager is available
+        if (_stateManager != null)
         {
-            yield return new GeneticAlgorithmResult(
-                Generation: config.MaxGenerations - 1, // Last valid generation index
-                BestFitness: bestTour.Fitness,
-                AverageFitness: population.Average(t => t.Fitness),
-                BestTour: bestTour.Cities.ToArray(),
-                BestDistance: bestTour.Distance,
-                ElapsedMilliseconds: stopwatch.ElapsedMilliseconds,
-                IsComplete: true
-            );
+            var finalState = CreateAlgorithmState(
+                sessionId, currentGeneration, config, cities, population, bestTour,
+                convergenceHistory, elapsedOffset + stopwatch.ElapsedMilliseconds,
+                generationsWithoutImprovement, lastImprovementGeneration,
+                AlgorithmStatus.Completed);
+
+            try
+            {
+                await _stateManager.SaveStateAsync(finalState, cancellationToken);
+                _logger.LogInformation("Saved final algorithm state for session {SessionId}", sessionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to save final algorithm state");
+            }
         }
 
         _logger.LogInformation("GA completed. Best fitness: {Fitness}, Generations: {Generations}, Total time: {ElapsedMs}ms",
-            bestTour.Fitness, completedEarly ? currentGeneration + 1 : config.MaxGenerations, stopwatch.ElapsedMilliseconds);
+            bestTour.Fitness, completedEarly ? currentGeneration + 1 : config.MaxGenerations, 
+            elapsedOffset + stopwatch.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// Pauses the algorithm and saves the current state
+    /// </summary>
+    public async Task<string?> PauseAndSaveStateAsync(
+        string sessionId,
+        int currentGeneration,
+        GeneticAlgorithmConfig config,
+        City[] cities,
+        Tour[] population,
+        Tour bestTour,
+        List<double> convergenceHistory,
+        long elapsedMilliseconds,
+        int generationsWithoutImprovement,
+        int lastImprovementGeneration,
+        CancellationToken cancellationToken = default)
+    {
+        if (_stateManager == null)
+            return null;
+
+        var state = CreateAlgorithmState(
+            sessionId, currentGeneration, config, cities, population, bestTour,
+            convergenceHistory, elapsedMilliseconds, generationsWithoutImprovement,
+            lastImprovementGeneration, AlgorithmStatus.Paused);
+
+        try
+        {
+            await _stateManager.SaveStateAsync(state, cancellationToken);
+            _logger.LogInformation("Paused and saved algorithm state for session {SessionId}", sessionId);
+            return sessionId;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save paused algorithm state");
+            return null;
+        }
+    }
+
+    private static GeneticAlgorithmState CreateAlgorithmState(
+        string sessionId,
+        int currentGeneration,
+        GeneticAlgorithmConfig config,
+        City[] cities,
+        Tour[] population,
+        Tour? bestTour,
+        List<double> convergenceHistory,
+        long elapsedMilliseconds,
+        int generationsWithoutImprovement,
+        int lastImprovementGeneration,
+        AlgorithmStatus status)
+    {
+        return new GeneticAlgorithmState
+        {
+            SessionId = sessionId,
+            CurrentGeneration = currentGeneration,
+            Config = config,
+            Cities = cities,
+            Population = new PopulationState
+            {
+                Tours = population.Select(TourWithFitness.FromTour).ToList()
+            },
+            BestTour = bestTour != null ? TourWithFitness.FromTour(bestTour) : null,
+            ConvergenceHistory = convergenceHistory,
+            PausedAt = DateTime.UtcNow,
+            ElapsedMilliseconds = elapsedMilliseconds,
+            GenerationsWithoutImprovement = generationsWithoutImprovement,
+            LastImprovementGeneration = lastImprovementGeneration,
+            Status = status
+        };
     }
 
     /// <summary>
@@ -158,7 +316,7 @@ public sealed class GeneticEngine
         for (int i = 0; i < populationSize; i++)
         {
             var cities = (int[])baseTour.Clone();
-            
+
             // Shuffle using Fisher-Yates algorithm
             for (int j = cities.Length - 1; j > 0; j--)
             {
@@ -243,7 +401,7 @@ public sealed class GeneticEngine
     private Tour TournamentSelection(Tour[] population, int tournamentSize)
     {
         var tournament = new Tour[tournamentSize];
-        
+
         for (int i = 0; i < tournamentSize; i++)
         {
             int randomIndex = _random.Next(population.Length);

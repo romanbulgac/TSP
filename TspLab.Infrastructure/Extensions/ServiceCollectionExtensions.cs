@@ -7,6 +7,7 @@ using TspLab.Application.Metaheuristics;
 using TspLab.Infrastructure.Crossover;
 using TspLab.Infrastructure.Fitness;
 using TspLab.Infrastructure.Mutation;
+using TspLab.Infrastructure.Services;
 
 namespace TspLab.Infrastructure.Extensions;
 
@@ -41,6 +42,12 @@ public static class ServiceCollectionExtensions
         services.AddTransient<StrategyResolver>();
         services.AddTransient<TspSolverService>();
         services.AddTransient<AntColonyService>();
+        services.AddTransient<SimulatedAnnealingService>();
+
+        // Register TSPLIB services
+        services.AddTransient<TspLibParser>();
+        services.AddTransient<MdsService>();
+        services.AddTransient<TspLibService>();
 
         // Register TSP solver implementations
         services.AddTransient<ITspSolver, NearestNeighborSolver>();

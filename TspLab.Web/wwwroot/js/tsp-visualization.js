@@ -13,6 +13,13 @@ function initializeChart(canvasId) {
         return null;
     }
     
+    // Set fixed canvas size
+    ctx.width = 800;
+    ctx.height = 300;
+    ctx.style.width = '100%';
+    ctx.style.height = '300px';
+    ctx.style.maxHeight = '300px';
+    
     // Check if Chart.js is available
     if (typeof Chart === 'undefined') {
         console.error('Chart.js library is not loaded');
@@ -29,19 +36,27 @@ function initializeChart(canvasId) {
                     data: [],
                     borderColor: 'rgb(59, 130, 246)',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderWidth: 3,
-                    tension: 0.2,
+                    borderWidth: 2,
+                    tension: 0.1,
                     fill: true,
-                    pointRadius: 2,
-                    pointHoverRadius: 5
+                    pointRadius: 1,
+                    pointHoverRadius: 3
                 }]
             },
             options: {
-                responsive: true,
+                responsive: false,
                 maintainAspectRatio: false,
+                devicePixelRatio: 1,
                 animation: {
-                    duration: 300,
-                    easing: 'easeInOutQuart'
+                    duration: 0
+                },
+                layout: {
+                    padding: {
+                        top: 10,
+                        bottom: 10,
+                        left: 10,
+                        right: 10
+                    }
                 },
                 scales: {
                     x: {
@@ -59,7 +74,8 @@ function initializeChart(canvasId) {
                             color: 'rgba(156, 163, 175, 0.3)'
                         },
                         ticks: {
-                            color: '#6B7280'
+                            color: '#6B7280',
+                            maxTicksLimit: 8
                         }
                     },
                     y: {
@@ -78,6 +94,7 @@ function initializeChart(canvasId) {
                         },
                         ticks: {
                             color: '#6B7280',
+                            maxTicksLimit: 6,
                             callback: function(value) {
                             return value.toFixed(3);
                         }
@@ -486,6 +503,13 @@ function updateBenchmarkChart(canvasId, data, yAxisLabel) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     
+    // Set fixed canvas size
+    canvas.width = 800;
+    canvas.height = 350;
+    canvas.style.width = '100%';
+    canvas.style.height = '350px';
+    canvas.style.maxHeight = '350px';
+    
     // Destroy existing chart if it exists
     if (benchmarkCharts[canvasId]) {
         benchmarkCharts[canvasId].destroy();
@@ -526,21 +550,63 @@ function updateBenchmarkChart(canvasId, data, yAxisLabel) {
             }]
         },
         options: {
-            responsive: true,
+            responsive: false,
             maintainAspectRatio: false,
+            devicePixelRatio: 1,
+            animation: {
+                duration: 0
+            },
+            layout: {
+                padding: {
+                    top: 10,
+                    bottom: 10,
+                    left: 10,
+                    right: 10
+                }
+            },
             scales: {
                 x: {
                     display: true,
                     title: {
                         display: true,
-                        text: 'Algorithm'
+                        text: 'Algorithm',
+                        color: '#374151',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        }
+                    },
+                    ticks: {
+                        color: '#6B7280',
+                        maxTicksLimit: 6,
+                        maxRotation: 45
+                    },
+                    grid: {
+                        color: 'rgba(156, 163, 175, 0.3)'
                     }
                 },
                 y: {
                     display: true,
                     title: {
                         display: true,
-                        text: yAxisLabel
+                        text: yAxisLabel,
+                        color: '#374151',
+                        font: {
+                            size: 12,
+                            weight: 'bold'
+                        }
+                    },
+                    ticks: {
+                        color: '#6B7280',
+                        maxTicksLimit: 5,
+                        callback: function(value) {
+                            return yAxisLabel === 'Distance' ? 
+                                value.toFixed(1) : 
+                                value.toFixed(2) + 's';
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(156, 163, 175, 0.3)'
                     },
                     beginAtZero: true
                 }
@@ -551,6 +617,11 @@ function updateBenchmarkChart(canvasId, data, yAxisLabel) {
                 },
                 tooltip: {
                     enabled: true,
+                    backgroundColor: 'rgba(55, 65, 81, 0.9)',
+                    titleColor: 'white',
+                    bodyColor: 'white',
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 1,
                     callbacks: {
                         label: function(context) {
                             const value = yAxisLabel === 'Distance' ? 
@@ -624,143 +695,6 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('TSP Visualization JavaScript loaded');
 });
 
-// Benchmark chart functions
-function updateBenchmarkChart(canvasId, data, yAxisLabel) {
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) {
-        console.error(`Canvas element ${canvasId} not found`);
-        return;
-    }
-    
-    // Destroy existing chart if it exists
-    if (benchmarkCharts[canvasId]) {
-        benchmarkCharts[canvasId].destroy();
-    }
-    
-    // Prepare data based on chart type
-    let chartData;
-    let chartType = 'bar';
-    
-    if (yAxisLabel.includes('Distance')) {
-        // Distance comparison chart - show both average and best
-        chartData = {
-            labels: data.map(d => d.algorithm),
-            datasets: [
-                {
-                    label: 'Average Distance',
-                    data: data.map(d => d.avgDistance),
-                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
-                    borderColor: 'rgb(59, 130, 246)',
-                    borderWidth: 1
-                },
-                {
-                    label: 'Best Distance',
-                    data: data.map(d => d.bestDistance),
-                    backgroundColor: 'rgba(16, 185, 129, 0.6)',
-                    borderColor: 'rgb(16, 185, 129)',
-                    borderWidth: 1
-                }
-            ]
-        };
-    } else {
-        // Time comparison chart
-        chartData = {
-            labels: data.map(d => d.algorithm),
-            datasets: [{
-                label: yAxisLabel,
-                data: data.map(d => d.avgTime),
-                backgroundColor: 'rgba(168, 85, 247, 0.6)',
-                borderColor: 'rgb(168, 85, 247)',
-                borderWidth: 1
-            }]
-        };
-    }
-    
-    // Create new chart
-    benchmarkCharts[canvasId] = new Chart(ctx, {
-        type: chartType,
-        data: chartData,
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                title: {
-                    display: true,
-                    text: yAxisLabel.includes('Distance') ? 'Algorithm Distance Comparison' : 'Algorithm Time Comparison',
-                    color: '#374151',
-                    font: {
-                        size: 14,
-                        weight: 'bold'
-                    }
-                },
-                legend: {
-                    display: yAxisLabel.includes('Distance'),
-                    position: 'top'
-                },
-                tooltip: {
-                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                    titleColor: '#ffffff',
-                    bodyColor: '#ffffff',
-                    borderColor: '#6b7280',
-                    borderWidth: 1
-                }
-            },
-            scales: {
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Algorithm',
-                        color: '#374151',
-                        font: {
-                            size: 12,
-                            weight: 'bold'
-                        }
-                    },
-                    ticks: {
-                        color: '#6b7280',
-                        maxRotation: 45,
-                        minRotation: 0
-                    },
-                    grid: {
-                        color: 'rgba(156, 163, 175, 0.3)'
-                    }
-                },
-                y: {
-                    title: {
-                        display: true,
-                        text: yAxisLabel,
-                        color: '#374151',
-                        font: {
-                            size: 12,
-                            weight: 'bold'
-                        }
-                    },
-                    ticks: {
-                        color: '#6b7280',
-                        callback: function(value, index, values) {
-                            if (yAxisLabel.includes('Distance')) {
-                                return value.toFixed(1);
-                            } else {
-                                return value.toFixed(2) + 's';
-                            }
-                        }
-                    },
-                    grid: {
-                        color: 'rgba(156, 163, 175, 0.3)'
-                    },
-                    beginAtZero: true
-                }
-            },
-            animation: {
-                duration: 800,
-                easing: 'easeInOutQuart'
-            }
-        }
-    });
-    
-    console.log(`Updated benchmark chart: ${canvasId}`);
-}
-
 // Clear all benchmark charts
 function clearBenchmarkCharts() {
     Object.keys(benchmarkCharts).forEach(chartId => {
@@ -769,4 +703,17 @@ function clearBenchmarkCharts() {
             delete benchmarkCharts[chartId];
         }
     });
+}
+
+// File download utility for exporting data
+function downloadFile(filename, content, contentType = 'text/plain') {
+    const blob = new Blob([content], { type: contentType });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
 }

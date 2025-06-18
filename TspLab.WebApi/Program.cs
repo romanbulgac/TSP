@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Serilog;
 using TspLab.Application.Services;
 using TspLab.Infrastructure.Extensions;
@@ -20,6 +22,28 @@ builder.Host.UseSerilog((context, config) =>
 // Add services to the container
 builder.Services.AddInfrastructure();
 builder.Services.AddSignalR();
+
+// Register state management
+builder.Services.AddScoped<TspLab.Domain.Interfaces.IAlgorithmStateManager, TspLab.Infrastructure.Services.ServerStateManager>();
+
+// Configure file upload limits
+builder.Services.Configure<IISServerOptions>(options =>
+{
+    options.MaxRequestBodySize = 100 * 1024 * 1024; // 100 MB
+});
+
+builder.Services.Configure<KestrelServerOptions>(options =>
+{
+    options.Limits.MaxRequestBodySize = 100 * 1024 * 1024; // 100 MB
+});
+
+// Configure form options for multipart uploads
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartBodyLengthLimit = 100 * 1024 * 1024; // 100 MB
+    options.MultipartHeadersLengthLimit = int.MaxValue;
+});
 
 // Add controllers
 builder.Services.AddControllers();

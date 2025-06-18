@@ -48,7 +48,7 @@ public class GeneticAlgorithmConfig
     /// <summary>
     /// Number of generations to wait without improvement before stopping
     /// </summary>
-    public int StagnationLimit { get; set; } = 100;
+    public int StagnationLimit { get; set; } = 200;
 
     /// <summary>
     /// Seed for random number generation (for reproducible results)
@@ -107,25 +107,25 @@ public class GeneticAlgorithmConfig
     {
         if (PopulationSize <= 0)
             throw new ArgumentException("Population size must be positive", nameof(PopulationSize));
-        
+
         if (MaxGenerations <= 0)
             throw new ArgumentException("Max generations must be positive", nameof(MaxGenerations));
-        
+
         if (MutationRate < 0.0 || MutationRate > 1.0)
             throw new ArgumentException("Mutation rate must be between 0.0 and 1.0", nameof(MutationRate));
-        
+
         if (CrossoverRate < 0.0 || CrossoverRate > 1.0)
             throw new ArgumentException("Crossover rate must be between 0.0 and 1.0", nameof(CrossoverRate));
-        
+
         if (ElitismRate < 0.0 || ElitismRate > 1.0)
             throw new ArgumentException("Elitism rate must be between 0.0 and 1.0", nameof(ElitismRate));
-        
+
         if (TournamentSize <= 0)
             throw new ArgumentException("Tournament size must be positive", nameof(TournamentSize));
-        
+
         if (StagnationLimit < 0)
             throw new ArgumentException("Stagnation limit cannot be negative", nameof(StagnationLimit));
-        
+
         if (ProgressReportInterval <= 0)
             throw new ArgumentException("Progress report interval must be positive", nameof(ProgressReportInterval));
 

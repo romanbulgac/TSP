@@ -1,3 +1,6 @@
+using TspLab.Domain.Entities;
+using TspLab.Domain.Interfaces;
+
 namespace TspLab.Infrastructure.Mutation;
 
 /// <summary>

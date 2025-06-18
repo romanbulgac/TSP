@@ -27,8 +27,8 @@ public class HealthController : ControllerBase
     {
         try
         {
-            return Ok(new 
-            { 
+            return Ok(new
+            {
                 Status = "Healthy",
                 Timestamp = DateTime.UtcNow,
                 Version = "1.0.0"

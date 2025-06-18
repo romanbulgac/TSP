@@ -11,6 +11,7 @@ public sealed class SignalRService : IAsyncDisposable
     private HubConnection? _hubConnection;
     private readonly List<Func<GeneticAlgorithmResult, Task>> _resultHandlers = new();
     private readonly List<Func<AntColonyResult, Task>> _acoResultHandlers = new();
+    private readonly List<Func<SimulatedAnnealingResult, Task>> _saResultHandlers = new();
     private readonly HttpClient _httpClient;
 
     public SignalRService(HttpClient httpClient)
@@ -34,6 +35,21 @@ public sealed class SignalRService : IAsyncDisposable
     public event Func<HubConnectionState, Task>? ConnectionStateChanged;
 
     /// <summary>
+    /// Event fired when pause is requested
+    /// </summary>
+    public event Action<string>? PauseRequested;
+
+    /// <summary>
+    /// Event fired when resume is requested
+    /// </summary>
+    public event Action<string, string>? ResumeRequested;
+
+    /// <summary>
+    /// Event fired when state is saved
+    /// </summary>
+    public event Action<string, int, string>? StateSaved;
+
+    /// <summary>
     /// Starts the SignalR connection
     /// </summary>
     /// <param name="hubUrl">URL of the SignalR hub (relative path)</param>
@@ -52,7 +68,8 @@ public sealed class SignalRService : IAsyncDisposable
             _hubConnection = new HubConnectionBuilder()
                 .WithUrl(fullHubUrl.ToString())
                 .WithAutomaticReconnect()
-                .ConfigureLogging(builder => {
+                .ConfigureLogging(builder =>
+                {
                     builder.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
                 })
                 .Build();
@@ -74,6 +91,34 @@ public sealed class SignalRService : IAsyncDisposable
                 {
                     await handler(result);
                 }
+            });
+
+            _hubConnection.On<SimulatedAnnealingResult>("ReceiveSaResult", async result =>
+            {
+                Console.WriteLine($"[SignalR] Received SA result: Iteration {result.Iteration}");
+                foreach (var handler in _saResultHandlers)
+                {
+                    await handler(result);
+                }
+            });
+
+            // Register pause/resume handlers
+            _hubConnection.On<string>("PauseRequested", connectionId =>
+            {
+                Console.WriteLine($"[SignalR] Pause requested for connection: {connectionId}");
+                PauseRequested?.Invoke(connectionId);
+            });
+
+            _hubConnection.On<string, string>("ResumeRequested", (sessionId, connectionId) =>
+            {
+                Console.WriteLine($"[SignalR] Resume requested for session {sessionId}, connection: {connectionId}");
+                ResumeRequested?.Invoke(sessionId, connectionId);
+            });
+
+            _hubConnection.On<string, int, string>("StateSaved", (sessionId, generation, connectionId) =>
+            {
+                Console.WriteLine($"[SignalR] State saved: {sessionId} at generation {generation}");
+                StateSaved?.Invoke(sessionId, generation, connectionId);
             });
 
             _hubConnection.Closed += async (error) =>
@@ -161,6 +206,24 @@ public sealed class SignalRService : IAsyncDisposable
     public void UnsubscribeFromAcoResults(Func<AntColonyResult, Task> handler)
     {
         _acoResultHandlers.Remove(handler);
+    }
+
+    /// <summary>
+    /// Subscribes to SA result updates
+    /// </summary>
+    /// <param name="handler">Handler for processing SA results</param>
+    public void SubscribeToSaResults(Func<SimulatedAnnealingResult, Task> handler)
+    {
+        _saResultHandlers.Add(handler);
+    }
+
+    /// <summary>
+    /// Unsubscribes from SA result updates
+    /// </summary>
+    /// <param name="handler">Handler to remove</param>
+    public void UnsubscribeFromSaResults(Func<SimulatedAnnealingResult, Task> handler)
+    {
+        _saResultHandlers.Remove(handler);
     }
 
     /// <summary>

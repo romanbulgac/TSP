@@ -33,7 +33,7 @@ public sealed class OrderCrossover : ICrossover
         ArgumentNullException.ThrowIfNull(parent1);
         ArgumentNullException.ThrowIfNull(parent2);
         ArgumentNullException.ThrowIfNull(random);
-        
+
         if (parent1.Length != parent2.Length)
             throw new ArgumentException("Parent tours must have the same length");
 
@@ -63,7 +63,7 @@ public sealed class OrderCrossover : ICrossover
         // Select random crossover points
         var start = random.Next(length);
         var end = random.Next(length);
-        
+
         // Ensure start <= end
         if (start > end)
             (start, end) = (end, start);
@@ -80,12 +80,12 @@ public sealed class OrderCrossover : ICrossover
         // Fill remaining positions with cities from secondary parent in order
         var secondaryCities = secondary.Cities;
         var fillIndex = (end + 1) % length;
-        
+
         for (int i = 0; i < length; i++)
         {
             var secondaryIndex = (end + 1 + i) % length;
             var cityIndex = secondaryCities[secondaryIndex];
-            
+
             if (!used[cityIndex])
             {
                 offspring[fillIndex] = cityIndex;

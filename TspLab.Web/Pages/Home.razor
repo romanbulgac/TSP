@@ -168,15 +168,13 @@
                             <p class="text-sm text-gray-600 mt-2">Tour Visualization</p>
                         </div>
                     </div>
-                }
-
-                <!-- Convergence Chart -->
+                }                <!-- Convergence Chart -->
                 @if (convergenceData.Count > 0)
                 {
                     <div class="bg-white rounded-lg shadow-sm border p-6">
                         <h3 class="text-lg font-semibold text-gray-900 mb-4">Convergence Chart</h3>
-                        <div class="bg-gray-100 rounded-lg p-4">
-                            <canvas id="convergenceChart" width="800" height="300" class="w-full"></canvas>
+                        <div class="convergence-chart-container bg-gray-100 rounded-lg p-4">
+                            <canvas id="convergenceChart" width="800" height="300"></canvas>
                         </div>
                     </div>
                 }

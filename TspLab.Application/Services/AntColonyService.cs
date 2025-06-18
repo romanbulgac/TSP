@@ -39,7 +39,7 @@ public sealed class AntColonyService
         if (!config.IsValid())
             throw new ArgumentException("Invalid ACO configuration", nameof(config));
 
-        _logger.LogInformation("Starting ACO solve for {CityCount} cities with {AntCount} ants for {MaxIterations} iterations", 
+        _logger.LogInformation("Starting ACO solve for {CityCount} cities with {AntCount} ants for {MaxIterations} iterations",
             cities.Length, config.AntCount, config.MaxIterations);
 
         var solver = new AntColonyOptimizationSolver();
@@ -56,7 +56,7 @@ public sealed class AntColonyService
 
             if (result.IsComplete)
             {
-                _logger.LogInformation("ACO completed after {Iterations} iterations. Best distance: {BestDistance:F2}", 
+                _logger.LogInformation("ACO completed after {Iterations} iterations. Best distance: {BestDistance:F2}",
                     result.Iteration + 1, result.BestDistance);
                 break;
             }
@@ -142,7 +142,7 @@ public sealed class AntColonyService
             var centerY = random.NextDouble() * 800 + 100;
             var clusterRadius = random.NextDouble() * 80 + 40; // Cluster radius between 40-120
 
-            var citiesInThisCluster = (cluster == clusterCount - 1) ? 
+            var citiesInThisCluster = (cluster == clusterCount - 1) ?
                 count - cityIndex : citiesPerCluster;
 
             for (int i = 0; i < citiesInThisCluster; i++)

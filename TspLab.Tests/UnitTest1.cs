@@ -216,14 +216,14 @@ public class FitnessTests
         // Arrange
         var cache = new MemoryCache(new MemoryCacheOptions());
         var fitnessFunction = new DistanceFitnessFunction(cache);
-        
+
         var cities = new[]
         {
             new City(0, "A", 0, 0),
             new City(1, "B", 3, 4),
             new City(2, "C", 6, 8)
         };
-        
+
         var tour = new Tour(new[] { 0, 1, 2 });
 
         // Act

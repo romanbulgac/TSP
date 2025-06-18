@@ -18,7 +18,7 @@ public sealed class Tour : IEquatable<Tour>
         ArgumentNullException.ThrowIfNull(cities);
         if (cities.Length == 0)
             throw new ArgumentException("Tour cannot be empty", nameof(cities));
-            
+
         _cities = new int[cities.Length];
         Array.Copy(cities, _cities, cities.Length);
     }
@@ -59,7 +59,7 @@ public sealed class Tour : IEquatable<Tour>
     /// <summary>
     /// Creates a copy of this tour
     /// </summary>
-    public Tour Clone() 
+    public Tour Clone()
     {
         var clone = new Tour(_cities);
         clone._fitness = _fitness;

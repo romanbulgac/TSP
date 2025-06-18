@@ -33,7 +33,7 @@ public sealed class EdgeRecombinationCrossover : ICrossover
         ArgumentNullException.ThrowIfNull(parent1);
         ArgumentNullException.ThrowIfNull(parent2);
         ArgumentNullException.ThrowIfNull(random);
-        
+
         if (parent1.Length != parent2.Length)
             throw new ArgumentException("Parent tours must have the same length");
 
@@ -58,18 +58,18 @@ public sealed class EdgeRecombinationCrossover : ICrossover
         var length = primary.Length;
         var offspring = new int[length];
         var used = new bool[length];
-        
+
         // Build edge table combining edges from both parents
         var edgeTable = BuildEdgeTable(primary, secondary);
-        
+
         // Start with a random city from primary parent
         var currentCity = primary.Cities[random.Next(length)];
         offspring[0] = currentCity;
         used[currentCity] = true;
-        
+
         // Remove the chosen city from all edge lists
         RemoveCityFromEdgeTable(edgeTable, currentCity);
-        
+
         // Build the rest of the tour
         for (int i = 1; i < length; i++)
         {
@@ -77,14 +77,14 @@ public sealed class EdgeRecombinationCrossover : ICrossover
             offspring[i] = nextCity;
             used[nextCity] = true;
             currentCity = nextCity;
-            
+
             // Remove the chosen city from all edge lists
             RemoveCityFromEdgeTable(edgeTable, currentCity);
         }
-        
+
         return new Tour(offspring);
     }
-    
+
     /// <summary>
     /// Builds an edge table that maps each city to its neighboring cities in both parents
     /// </summary>
@@ -95,22 +95,22 @@ public sealed class EdgeRecombinationCrossover : ICrossover
     {
         var edgeTable = new Dictionary<int, HashSet<int>>();
         var length = parent1.Length;
-        
+
         // Initialize edge table
         for (int i = 0; i < length; i++)
         {
             edgeTable[i] = new HashSet<int>();
         }
-        
+
         // Add edges from parent1
         AddEdgesFromParent(edgeTable, parent1);
-        
+
         // Add edges from parent2
         AddEdgesFromParent(edgeTable, parent2);
-        
+
         return edgeTable;
     }
-    
+
     /// <summary>
     /// Adds edges from a parent tour to the edge table
     /// </summary>
@@ -120,19 +120,19 @@ public sealed class EdgeRecombinationCrossover : ICrossover
     {
         var cities = parent.Cities;
         var length = cities.Length;
-        
+
         for (int i = 0; i < length; i++)
         {
             var currentCity = cities[i];
             var prevCity = cities[(i - 1 + length) % length];
             var nextCity = cities[(i + 1) % length];
-            
+
             // Add bidirectional edges
             edgeTable[currentCity].Add(prevCity);
             edgeTable[currentCity].Add(nextCity);
         }
     }
-    
+
     /// <summary>
     /// Removes a city from all edge lists in the edge table
     /// </summary>
@@ -145,7 +145,7 @@ public sealed class EdgeRecombinationCrossover : ICrossover
             edgeList.Remove(cityToRemove);
         }
     }
-    
+
     /// <summary>
     /// Selects the next city to add to the offspring tour
     /// </summary>
@@ -159,7 +159,7 @@ public sealed class EdgeRecombinationCrossover : ICrossover
         var availableNeighbors = edgeTable[currentCity]
             .Where(city => !used[city])
             .ToList();
-        
+
         if (availableNeighbors.Count > 0)
         {
             // Prefer cities with fewer available edges (breaking ties randomly)
@@ -167,15 +167,15 @@ public sealed class EdgeRecombinationCrossover : ICrossover
             var candidates = availableNeighbors
                 .Where(city => edgeTable[city].Count(c => !used[c]) == minEdgeCount)
                 .ToList();
-            
+
             return candidates[random.Next(candidates.Count)];
         }
-        
+
         // If no neighbors are available, choose any unused city randomly
         var unusedCities = Enumerable.Range(0, used.Length)
             .Where(city => !used[city])
             .ToList();
-        
+
         return unusedCities[random.Next(unusedCities.Count)];
     }
 }

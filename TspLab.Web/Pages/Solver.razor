@@ -9,6 +9,7 @@
 @inject SignalRService SignalRService
 @inject IJSRuntime JSRuntime
 @inject IEnumerable<ITspSolver> TspSolvers
+@inject CityDataService CityDataService
 @implements IAsyncDisposable
 
 <div class="min-h-screen bg-gray-50">
@@ -67,6 +68,16 @@
                                 </div>
                                 <div class="text-xs text-gray-500">
                                     Current: @(cities?.Length ?? 0) cities
+                                    @if (citiesFromTspLib && !string.IsNullOrEmpty(citySourceName))
+                                    {
+                                        <div class="mt-1 px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs">
+                                            📁 Loaded from TSPLIB: @citySourceName
+                                        </div>
+                                        <button @onclick="ClearTspLibCities" 
+                                                class="mt-1 px-2 py-1 bg-red-100 text-red-700 hover:bg-red-200 rounded text-xs">
+                                            Clear TSPLIB Cities
+                                        </button>
+                                    }
                                 </div>
                             </div>
                         </div>
@@ -227,6 +238,73 @@
                             </div>
                         }
 
+                        <!-- SA Parameters (show only for Simulated Annealing) -->
+                        @if (selectedAlgorithm == "Simulated Annealing")
+                        {
+                            <div class="border rounded-lg p-4">
+                                <h3 class="font-medium text-gray-900 mb-3">SA Parameters</h3>
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Initial Temperature</label>
+                                        <input @bind="saConfig.InitialTemperature" @bind:after="OnSaConfigChanged" type="number" step="100" min="100" max="10000"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                        <p class="text-xs text-gray-500 mt-1">Range: 100-10000</p>
+                                        @if (saConfig.InitialTemperature > 5000)
+                                        {
+                                            <p class="text-xs text-amber-600 mt-1">⚠️ High temperature may slow convergence</p>
+                                        }
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Final Temperature</label>
+                                        <input @bind="saConfig.FinalTemperature" @bind:after="OnSaConfigChanged" type="number" step="0.01" min="0.01" max="10"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                        <p class="text-xs text-gray-500 mt-1">Range: 0.01-10.0</p>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Cooling Rate</label>
+                                        <input @bind="saConfig.CoolingRate" type="number" step="0.001" min="0.9" max="0.9999"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                        <p class="text-xs text-gray-500 mt-1">Range: 0.9-0.9999 (higher = slower cooling)</p>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Max Iterations</label>
+                                        <input @bind="saConfig.MaxIterations" @bind:after="OnSaConfigChanged" type="number" min="1000" max="100000"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                        <p class="text-xs text-gray-500 mt-1">Range: 1000-100000 iterations</p>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">2-Opt Probability</label>
+                                        <input @bind="saConfig.TwoOptProbability" type="number" step="0.1" min="0" max="1"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                        <p class="text-xs text-gray-500 mt-1">Probability of using 2-opt vs swap move</p>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Reheat Check Interval</label>
+                                        <input @bind="saConfig.ReheatCheckInterval" type="number" min="100" max="5000"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                        <p class="text-xs text-gray-500 mt-1">Iterations between reheating checks</p>
+                                    </div>
+                                    
+                                    <div class="flex items-center">
+                                        <input @bind="saConfig.UseNearestNeighborInitialization" type="checkbox" 
+                                               class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                        <label class="ml-2 text-sm text-gray-700">Use Nearest Neighbor Initialization</label>
+                                    </div>
+                                    
+                                    <div class="flex items-center">
+                                        <input @bind="saConfig.EnableAdaptiveReheating" type="checkbox" 
+                                               class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                                        <label class="ml-2 text-sm text-gray-700">Enable Adaptive Reheating</label>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
                         <!-- Control Buttons -->
                         <div class="space-y-2">
                             @if (selectedAlgorithm == "Ant Colony Optimization" && !acoConfig.IsValid())
@@ -241,10 +319,20 @@
                                     ⚠️ Invalid GA configuration. Please check the parameters.
                                 </div>
                             }
+                            @if (selectedAlgorithm == "Simulated Annealing" && !saConfig.IsValid())
+                            {
+                                <div class="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                                    ⚠️ Invalid SA configuration. Please check the parameters.
+                                </div>
+                            }
                             <div class="flex space-x-2">
                                 <button @onclick="StartSolving" disabled="@(!CanStartSolving())"
                                         class="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
                                     @if (isSolving) { <span>Solving...</span> } else { <span>Start Solving</span> }
+                                </button>
+                                <button @onclick="PauseSolving" disabled="@(!isSolving || selectedAlgorithm != "Genetic Algorithm")"
+                                        class="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 disabled:opacity-50">
+                                    Pause
                                 </button>
                                 <button @onclick="StopSolving" disabled="@(!isSolving)"
                                         class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
@@ -252,6 +340,51 @@
                                 </button>
                             </div>
                         </div>
+
+                        <!-- Saved States Section (only for Genetic Algorithm) -->
+                        @if (selectedAlgorithm == "Genetic Algorithm")
+                        {
+                            <div class="border rounded-lg p-4 mt-4">
+                                <h3 class="font-medium text-gray-900 mb-3">Saved States</h3>
+                                <div class="space-y-3">
+                                    <button @onclick="LoadSavedStates" disabled="@isLoadingStates"
+                                            class="w-full px-3 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50">
+                                        @if (isLoadingStates) { <span>Loading...</span> } else { <span>Refresh States</span> }
+                                    </button>
+                                    @if (savedStates?.Any() == true)
+                                    {
+                                        <div class="max-h-32 overflow-y-auto space-y-2">
+                                            @foreach (var state in savedStates)
+                                            {
+                                                <div class="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                                                    <div class="flex-1 text-xs">
+                                                        <div class="font-medium">Gen: @state.CurrentGeneration/@state.MaxGenerations</div>
+                                                        <div class="text-gray-600">Distance: @state.BestDistance.ToString("F1")</div>
+                                                        <div class="text-gray-500">@state.SavedAt.ToString("MM/dd HH:mm")</div>
+                                                    </div>
+                                                    <div class="flex space-x-1">
+                                                        <button @onclick="() => ResumeSolving(state.SessionId)" disabled="@isSolving"
+                                                                class="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50">
+                                                            Resume
+                                                        </button>
+                                                        <button @onclick="() => DeleteSavedState(state.SessionId)" disabled="@isSolving"
+                                                                class="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50">
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-sm text-gray-500 text-center py-2">
+                                            No saved states available
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
                     </div>
                 </div>
             </div>
@@ -280,9 +413,8 @@
                     {
                         <div class="bg-white rounded-lg shadow-sm border p-6">
                             <h3 class="text-lg font-semibold text-gray-900 mb-4">Convergence Chart</h3>
-                            <div class="relative">
-                                <canvas id="solverConvergenceChart" width="400" height="400" 
-                                        class="w-full h-auto border border-gray-200 rounded"></canvas>
+                            <div class="convergence-chart-container">
+                                <canvas id="solverConvergenceChart" width="800" height="300"></canvas>
                                 @if (!convergenceData.Any())
                                 {
                                     <div class="absolute inset-0 flex items-center justify-center text-gray-500">
@@ -298,9 +430,25 @@
                     {
                         <div class="bg-white rounded-lg shadow-sm border p-6">
                             <h3 class="text-lg font-semibold text-gray-900 mb-4">ACO Convergence</h3>
-                            <div class="relative">
-                                <canvas id="acoConvergenceChart" width="400" height="400" 
-                                        class="w-full h-auto border border-gray-200 rounded"></canvas>
+                            <div class="convergence-chart-container">
+                                <canvas id="acoConvergenceChart" width="800" height="300"></canvas>
+                                @if (!convergenceData.Any())
+                                {
+                                    <div class="absolute inset-0 flex items-center justify-center text-gray-500">
+                                        Start solving to see convergence
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Convergence Chart (for Simulated Annealing) -->
+                    @if (selectedAlgorithm == "Simulated Annealing")
+                    {
+                        <div class="bg-white rounded-lg shadow-sm border p-6">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">SA Convergence</h3>
+                            <div class="convergence-chart-container">
+                                <canvas id="saConvergenceChart" width="800" height="300"></canvas>
                                 @if (!convergenceData.Any())
                                 {
                                     <div class="absolute inset-0 flex items-center justify-center text-gray-500">
@@ -431,6 +579,56 @@
                         </div>
                     }
 
+                    <!-- Statistics (for Simulated Annealing) -->
+                    @if (selectedAlgorithm == "Simulated Annealing")
+                    {
+                        <div class="bg-white rounded-lg shadow-sm border p-6 lg:col-span-2">
+                            <h3 class="text-lg font-semibold text-gray-900 mb-4">SA Statistics</h3>
+                            @if (currentSaResult != null)
+                            {
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div class="text-center">
+                                        <div class="text-2xl font-bold text-blue-600">@currentSaResult.Iteration</div>
+                                        <div class="text-sm text-gray-500">Iteration</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-2xl font-bold text-green-600">@currentSaResult.BestDistance.ToString("F2")</div>
+                                        <div class="text-sm text-gray-500">Best Distance</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-2xl font-bold text-red-600">@currentSaResult.CurrentTemperature.ToString("F2")</div>
+                                        <div class="text-sm text-gray-500">Temperature</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-2xl font-bold text-purple-600">@(currentSaResult.AcceptanceRate * 100).ToString("F1")%</div>
+                                        <div class="text-sm text-gray-500">Acceptance Rate</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4 pt-4 border-t">
+                                    <div class="text-center">
+                                        <div class="text-lg font-bold text-orange-600">@currentSaResult.Phase</div>
+                                        <div class="text-xs text-gray-500">Current Phase</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-lg font-bold text-teal-600">@((currentSaResult.ElapsedTime.TotalMilliseconds / 1000.0).ToString("F1"))s</div>
+                                        <div class="text-xs text-gray-500">Elapsed Time</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="text-lg font-bold text-indigo-600">@currentSaResult.Improvements</div>
+                                        <div class="text-xs text-gray-500">Improvements</div>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="text-center text-gray-500 py-8">
+                                    No SA data available
+                                </div>
+                            }
+                        </div>
+                    }
+
                     <!-- Solution Log -->
                     <div class="bg-white rounded-lg shadow-sm border p-6 lg:col-span-2">
                         <h3 class="text-lg font-semibold text-gray-900 mb-4">Solution Log</h3>
@@ -459,6 +657,14 @@
     private int cityCount = 20;
     private bool isGenerating = false;
     private bool isSolving = false;
+    
+    // TSPLIB integration
+    private string? citySourceName;
+    private bool citiesFromTspLib = false;
+    
+    // Pause/Resume functionality
+    private bool isLoadingStates = false;
+    private List<GeneticAlgorithmStateSummary>? savedStates;
     
     // Algorithm selection
     private List<ITspSolver> availableSolvers = new();
@@ -489,9 +695,22 @@
         ProgressReportInterval = 10
     };
 
+    private SimulatedAnnealingConfig saConfig = new()
+    {
+        InitialTemperature = 1000.0,
+        FinalTemperature = 0.1,
+        CoolingRate = 0.995,
+        MaxIterations = 10000,
+        UseNearestNeighborInitialization = true,
+        TwoOptProbability = 0.7,
+        EnableAdaptiveReheating = true,
+        ReheatCheckInterval = 1000
+    };
+
     private AvailableStrategies? availableStrategies;
     private GeneticAlgorithmResult? currentResult;
     private AntColonyResult? currentAcoResult;
+    private SimulatedAnnealingResult? currentSaResult;
     private List<double> convergenceData = new();
     private List<string> executionLog = new();
 
@@ -517,12 +736,23 @@
             {
                 selectedAlgorithm = availableSolvers[0].Name;
                 UpdateAlgorithmDescription();
-                AddLogEntry($"Loaded {availableSolvers.Count} TSP solvers");
+                AddLogEntry($"Loaded {availableSolvers.Count} TSP solvers:");
+                foreach (var solver in availableSolvers)
+                {
+                    AddLogEntry($"  - {solver.Name}: {solver.Description}");
+                }
+            }
+            else
+            {
+                AddLogEntry("ERROR: No TSP solvers found! Check dependency injection.");
             }
             
             AddLogEntry("Loading available strategies...");
             availableStrategies = await ApiService.GetAvailableStrategiesAsync();
             AddLogEntry("Available strategies loaded successfully");
+            
+            // Subscribe to CityDataService changes
+            CityDataService.OnCitiesChanged += OnCitiesChanged;
             
             AddLogEntry("Starting SignalR connection...");
             var signalRConnected = await SignalRService.StartConnectionAsync();
@@ -531,16 +761,29 @@
                 AddLogEntry("SignalR connected successfully");
                 SignalRService.SubscribeToResults(OnGAResultReceived);
                 SignalRService.SubscribeToAcoResults(OnAcoResultReceived);
-                AddLogEntry("Subscribed to GA and ACO results");
+                SignalRService.SubscribeToSaResults(OnSaResultReceived);
+                AddLogEntry("Subscribed to GA, ACO, and SA results");
             }
             else
             {
                 AddLogEntry("ERROR: Failed to connect to SignalR");
             }
             
-            // Generate initial cities
-            AddLogEntry("Generating initial random cities...");
-            await GenerateRandomCities();
+            // Check if cities are available from TSPLIB
+            if (CityDataService.HasCities())
+            {
+                cities = CityDataService.GetCities();
+                citySourceName = CityDataService.GetSourceName();
+                citiesFromTspLib = true;
+                cityCount = cities?.Length ?? 0;
+                AddLogEntry($"Loaded {cityCount} cities from TSPLIB: {citySourceName}");
+            }
+            else
+            {
+                // Generate initial cities only if none from TSPLIB
+                AddLogEntry("Generating initial random cities...");
+                await GenerateRandomCities();
+            }
         }
         catch (Exception ex)
         {
@@ -594,6 +837,8 @@
         try
         {
             cities = await ApiService.GenerateRandomCitiesAsync(cityCount);
+            citiesFromTspLib = false;
+            citySourceName = null;
             await DrawCities();
             AddLogEntry($"Generated {cities!.Length} cities successfully");
         }
@@ -605,6 +850,22 @@
         {
             isGenerating = false;
             StateHasChanged();
+        }
+    }
+
+    private void ClearTspLibCities()
+    {
+        try
+        {
+            CityDataService.ClearCities();
+            citiesFromTspLib = false;
+            citySourceName = null;
+            AddLogEntry("Cleared TSPLIB cities - you can now generate new cities");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error clearing TSPLIB cities: {ex.Message}");
         }
     }
 
@@ -631,6 +892,8 @@
                 cities[i] = new City(i, $"City{i}", x, y);
             }
             
+            citiesFromTspLib = false;
+            citySourceName = null;
             await DrawCities();
             AddLogEntry($"Generated {cities!.Length} circular cities successfully");
         }
@@ -682,6 +945,8 @@
                 }
             }
             
+            citiesFromTspLib = false;
+            citySourceName = null;
             await DrawCities();
             AddLogEntry($"Generated {cities!.Length} clustered cities successfully");
         }
@@ -696,49 +961,111 @@
         }
     }
 
+    private async void OnCitiesChanged()
+    {
+        try
+        {
+            if (CityDataService.HasCities())
+            {
+                cities = CityDataService.GetCities();
+                citySourceName = CityDataService.GetSourceName();
+                citiesFromTspLib = true;
+                cityCount = cities?.Length ?? 0;
+                AddLogEntry($"Cities updated from TSPLIB: {citySourceName} ({cityCount} cities)");
+                
+                // Redraw cities if visualization is ready
+                if (cities != null && cities.Length > 0)
+                {
+                    await DrawCities();
+                }
+                
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error handling cities change: {ex.Message}");
+        }
+    }
+
     private async Task StartSolving()
     {
         if (cities == null || isSolving) return;
 
-        // For Genetic Algorithm, use the existing streaming approach
-        if (selectedAlgorithm == "Genetic Algorithm")
+        try
         {
-            isSolving = true;
-            convergenceData.Clear();
-            AddLogEntry($"Starting genetic algorithm with {config.PopulationSize} population...");
-            
-            try
+            // For Genetic Algorithm, use the existing streaming approach
+            if (selectedAlgorithm == "Genetic Algorithm")
             {
+                // Set isSolving for streaming algorithms
+                isSolving = true;
+                StateHasChanged();
+                
+                convergenceData.Clear();
+                AddLogEntry($"Starting genetic algorithm with {config.PopulationSize} population...");
+                
+                // Ensure we have a SignalR connection before starting
+                if (SignalRService.ConnectionState != Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connected)
+                {
+                    AddLogEntry("ERROR: SignalR not connected. Please refresh the page.");
+                    isSolving = false;
+                    return;
+                }
+                
                 await ApiService.StartTspSolvingAsync(cities, config, SignalRService.ConnectionId);
             }
-            catch (Exception ex)
+            // For Ant Colony Optimization, use the ACO streaming approach
+            else if (selectedAlgorithm == "Ant Colony Optimization")
             {
-                AddLogEntry($"Error starting solver: {ex.Message}");
-                isSolving = false;
-            }
-        }
-        // For Ant Colony Optimization, use the ACO streaming approach
-        else if (selectedAlgorithm == "Ant Colony Optimization")
-        {
-            isSolving = true;
-            convergenceData.Clear();
-            currentAcoResult = null;
-            AddLogEntry($"Starting Ant Colony Optimization with {acoConfig.AntCount} ants...");
-            
-            try
-            {
+                // Set isSolving for streaming algorithms
+                isSolving = true;
+                StateHasChanged();
+                
+                convergenceData.Clear();
+                currentAcoResult = null;
+                AddLogEntry($"Starting Ant Colony Optimization with {acoConfig.AntCount} ants...");
+                
+                // Ensure we have a SignalR connection before starting
+                if (SignalRService.ConnectionState != Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connected)
+                {
+                    AddLogEntry("ERROR: SignalR not connected. Please refresh the page.");
+                    isSolving = false;
+                    return;
+                }
+                
                 await ApiService.StartAcoSolvingAsync(cities, acoConfig, SignalRService.ConnectionId);
             }
-            catch (Exception ex)
+            // For Simulated Annealing, use the SA streaming approach
+            else if (selectedAlgorithm == "Simulated Annealing")
             {
-                AddLogEntry($"Error starting ACO solver: {ex.Message}");
-                isSolving = false;
+                // Set isSolving for streaming algorithms
+                isSolving = true;
+                StateHasChanged();
+                
+                convergenceData.Clear();
+                currentSaResult = null;
+                AddLogEntry($"Starting Simulated Annealing with temperature {saConfig.InitialTemperature}...");
+                
+                // Ensure we have a SignalR connection before starting
+                if (SignalRService.ConnectionState != Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Connected)
+                {
+                    AddLogEntry("ERROR: SignalR not connected. Please refresh the page.");
+                    isSolving = false;
+                    return;
+                }
+                
+                await ApiService.StartSaSolvingAsync(cities, saConfig, SignalRService.ConnectionId);
+            }
+            else
+            {
+                // For other algorithms (NN, 2-Opt), let RunSelectedAlgorithm handle isSolving
+                await RunSelectedAlgorithm();
             }
         }
-        else
+        catch (Exception ex)
         {
-            // For other algorithms, run them directly
-            await RunSelectedAlgorithm();
+            AddLogEntry($"Error starting solver: {ex.Message}");
+            isSolving = false;
         }
         
         StateHasChanged();
@@ -773,92 +1100,341 @@
         }
     }
 
-    private Task OnGAResultReceived(GeneticAlgorithmResult result)
+    private async Task PauseSolving()
     {
-        currentResult = result;
-        convergenceData.Add(result.BestFitness);
+        if (!isSolving || selectedAlgorithm != "Genetic Algorithm") return;
         
-        if (result.IsComplete)
+        try
+        {
+            AddLogEntry("Pausing genetic algorithm execution...");
+            var connectionId = SignalRService.ConnectionId;
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                AddLogEntry("ERROR: No active SignalR connection");
+                return;
+            }
+            
+            var success = await ApiService.PauseTspSolvingAsync(connectionId);
+            
+            if (success)
+            {
+                AddLogEntry("Pause request sent successfully");
+                // Refresh saved states to show the new paused state
+                await LoadSavedStates();
+            }
+            else
+            {
+                AddLogEntry("Failed to send pause request");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error pausing solver: {ex.Message}");
+        }
+        finally
         {
             isSolving = false;
-            AddLogEntry($"Solution completed! Best distance: {result.BestDistance:F2}");
+            StateHasChanged();
         }
-        else if (result.Generation % 10 == 0)
-        {
-            AddLogEntry($"Generation {result.Generation}: Best distance = {result.BestDistance:F2}");
-        }
-
-        StateHasChanged();
-        _ = Task.Run(async () =>
-        {
-            await DrawTour(result.BestTour);
-            await UpdateConvergenceChart();
-        });
-        
-        return Task.CompletedTask;
     }
 
-    private Task OnAcoResultReceived(AntColonyResult result)
+    private async Task LoadSavedStates()
     {
-        currentAcoResult = result;
-        convergenceData.Add(result.BestDistance);
+        if (isLoadingStates) return;
         
-        AddLogEntry($"ACO Update - Iteration {result.Iteration}: Distance = {result.BestDistance:F2}, IsComplete = {result.IsComplete}");
-        
-        if (result.IsComplete)
+        try
         {
-            isSolving = false;
-            AddLogEntry($"ACO solution completed! Best distance: {result.BestDistance:F2}");
+            isLoadingStates = true;
+            AddLogEntry("Loading saved states...");
+            
+            savedStates = await ApiService.GetSavedStatesAsync();
+            
+            if (savedStates?.Any() == true)
+            {
+                AddLogEntry($"Found {savedStates.Count} saved states");
+            }
+            else
+            {
+                AddLogEntry("No saved states found");
+            }
         }
-        else if (result.Iteration % 10 == 0)
+        catch (Exception ex)
         {
-            AddLogEntry($"Iteration {result.Iteration}: Best distance = {result.BestDistance:F2}");
+            AddLogEntry($"Error loading saved states: {ex.Message}");
+        }
+        finally
+        {
+            isLoadingStates = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ResumeSolving(string sessionId)
+    {
+        if (isSolving) return;
+        
+        try
+        {
+            isSolving = true;
+            convergenceData.Clear();
+            AddLogEntry($"Resuming genetic algorithm from saved state {sessionId}...");
+            
+            var success = await ApiService.ResumeTspSolvingAsync(sessionId, SignalRService.ConnectionId);
+            
+            if (!success)
+            {
+                AddLogEntry("Failed to resume execution");
+                isSolving = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error resuming solver: {ex.Message}");
+            isSolving = false;
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteSavedState(string sessionId)
+    {
+        if (isSolving) return;
+        
+        try
+        {
+            AddLogEntry($"Deleting saved state {sessionId}...");
+            
+            var success = await ApiService.DeleteSavedStateAsync(sessionId);
+            
+            if (success)
+            {
+                AddLogEntry("State deleted successfully");
+                await LoadSavedStates(); // Refresh the list
+            }
+            else
+            {
+                AddLogEntry("Failed to delete state");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error deleting state: {ex.Message}");
+        }
+    }
+
+    // ...existing code...
+
+    private async Task RunSelectedAlgorithm()
+    {
+        if (cities == null || isSolving) return;
+
+        AddLogEntry($"Looking for algorithm: '{selectedAlgorithm}' among {availableSolvers.Count} available solvers");
+        
+        var solver = availableSolvers.FirstOrDefault(s => s.Name == selectedAlgorithm);
+        if (solver == null)
+        {
+            AddLogEntry($"ERROR: Algorithm '{selectedAlgorithm}' not found");
+            AddLogEntry("Available algorithms:");
+            foreach (var availableSolver in availableSolvers)
+            {
+                AddLogEntry($"  - '{availableSolver.Name}'");
+            }
+            return;
         }
 
+        isSolving = true;
+        AddLogEntry($"Starting {solver.Name}...");
         StateHasChanged();
-        _ = Task.Run(async () =>
+
+        try
         {
-            await DrawTour(result.BestTour);
-            await UpdateConvergenceChart();
-        });
+            AddLogEntry($"Calling SolveAsync on {solver.GetType().Name} with {cities.Length} cities");
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var tour = await solver.SolveAsync(cities);
+            stopwatch.Stop();
+
+            if (tour == null)
+            {
+                AddLogEntry($"ERROR: {solver.Name} returned null tour");
+                return;
+            }
+
+            lastSolverResult = new SolverResult
+            {
+                AlgorithmName = solver.Name,
+                Distance = tour.Distance,
+                ExecutionTime = stopwatch.Elapsed,
+                Tour = tour
+            };
+
+            AddLogEntry($"Completed! Distance: {tour.Distance:F2}, Time: {stopwatch.ElapsedMilliseconds}ms");
+
+            // Draw the tour
+            if (tour.Cities != null && tour.Cities.Length > 0)
+            {
+                await DrawTour(tour.Cities.ToArray());
+            }
+            else
+            {
+                AddLogEntry("WARNING: Tour has no cities to draw");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error running {solver.Name}: {ex.Message}");
+            AddLogEntry($"Stack trace: {ex.StackTrace}");
+        }
+        finally
+        {
+            isSolving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ValidateAndCorrectAcoConfig()
+    {
+        var corrected = false;
         
-        return Task.CompletedTask;
+        if (acoConfig.AntCount < 5)
+        {
+            acoConfig.AntCount = 5;
+            corrected = true;
+        }
+        else if (acoConfig.AntCount > 500)
+        {
+            acoConfig.AntCount = 500;
+            corrected = true;
+        }
+        
+        if (acoConfig.MaxIterations < 50)
+        {
+            acoConfig.MaxIterations = 50;
+            corrected = true;
+        }
+        else if (acoConfig.MaxIterations > 2000)
+        {
+            acoConfig.MaxIterations = 2000;
+            corrected = true;
+        }
+        
+        // Auto-adjust progress report interval for performance
+        if (acoConfig.AntCount > 200 && acoConfig.ProgressReportInterval < 20)
+        {
+            acoConfig.ProgressReportInterval = 20;
+            corrected = true;
+            AddLogEntry("Progress report interval increased for better performance with high ant count");
+        }
+        else if (acoConfig.AntCount <= 200 && acoConfig.ProgressReportInterval > 10)
+        {
+            acoConfig.ProgressReportInterval = 10;
+            corrected = true;
+        }
+        
+        if (corrected)
+        {
+            AddLogEntry("ACO parameters were automatically corrected to valid ranges");
+            StateHasChanged();
+        }
+    }
+
+    private void OnAcoConfigChanged()
+    {
+        ValidateAndCorrectAcoConfig();
+    }
+
+    private void ValidateAndCorrectSaConfig()
+    {
+        var corrected = false;
+        
+        if (saConfig.InitialTemperature < 100)
+        {
+            saConfig.InitialTemperature = 100;
+            corrected = true;
+        }
+        else if (saConfig.InitialTemperature > 10000)
+        {
+            saConfig.InitialTemperature = 10000;
+            corrected = true;
+        }
+        
+        if (saConfig.FinalTemperature < 0.01)
+        {
+            saConfig.FinalTemperature = 0.01;
+            corrected = true;
+        }
+        else if (saConfig.FinalTemperature > 10.0)
+        {
+            saConfig.FinalTemperature = 10.0;
+            corrected = true;
+        }
+        
+        // Ensure final temperature is less than initial temperature
+        if (saConfig.FinalTemperature >= saConfig.InitialTemperature)
+        {
+            saConfig.FinalTemperature = saConfig.InitialTemperature * 0.001;
+            corrected = true;
+            AddLogEntry("Final temperature adjusted to be less than initial temperature");
+        }
+        
+        if (saConfig.MaxIterations < 1000)
+        {
+            saConfig.MaxIterations = 1000;
+            corrected = true;
+        }
+        else if (saConfig.MaxIterations > 100000)
+        {
+            saConfig.MaxIterations = 100000;
+            corrected = true;
+        }
+        
+        if (saConfig.CoolingRate < 0.9)
+        {
+            saConfig.CoolingRate = 0.9;
+            corrected = true;
+        }
+        else if (saConfig.CoolingRate > 0.9999)
+        {
+            saConfig.CoolingRate = 0.9999;
+            corrected = true;
+        }
+        
+        if (saConfig.ReheatCheckInterval < 100)
+        {
+            saConfig.ReheatCheckInterval = 100;
+            corrected = true;
+        }
+        else if (saConfig.ReheatCheckInterval > 5000)
+        {
+            saConfig.ReheatCheckInterval = 5000;
+            corrected = true;
+        }
+        
+        if (corrected)
+        {
+            AddLogEntry("SA parameters were automatically corrected to valid ranges");
+            StateHasChanged();
+        }
+    }
+
+    private void OnSaConfigChanged()
+    {
+        ValidateAndCorrectSaConfig();
     }
 
     private bool CanStartSolving()
     {
-        if (cities == null || cities.Length < 3) 
-        {
+        if (cities == null || cities.Length < 3 || isSolving)
             return false;
-        }
         
-        if (isSolving) 
-        {
-            return false;
-        }
-        
-        var isValid = selectedAlgorithm switch
+        return selectedAlgorithm switch
         {
             "Genetic Algorithm" => config.IsValid(),
             "Ant Colony Optimization" => acoConfig.IsValid(),
-            _ => true
+            "Simulated Annealing" => saConfig.IsValid(),
+            _ => true // For other algorithms that don't require complex validation
         };
-        
-        // Debug logging for ACO configuration issues
-        if (selectedAlgorithm == "Ant Colony Optimization" && !isValid)
-        {
-            AddLogEntry($"ACO Config validation failed: AntCount={acoConfig.AntCount}, MaxIterations={acoConfig.MaxIterations}");
-        }
-        
-        return isValid;
-    }
-    
-    private bool TryConvertToDouble(object? value, out double result)
-    {
-        result = 0;
-        if (value == null) return false;
-        
-        return double.TryParse(value.ToString(), out result);
     }
 
     private string GetConnectionStatusClass()
@@ -881,6 +1457,10 @@
     {
         var timestamp = DateTime.Now.ToString("HH:mm:ss");
         executionLog.Add($"[{timestamp}] {message}");
+        if (executionLog.Count > 100) // Keep only last 100 entries
+        {
+            executionLog.RemoveAt(0);
+        }
         StateHasChanged();
     }
 
@@ -950,29 +1530,102 @@
         }
     }
 
+    private async Task OnGAResultReceived(GeneticAlgorithmResult result)
+    {
+        currentResult = result;
+        convergenceData.Add(result.BestFitness);
+        
+        // Debug information
+        AddLogEntry($"Received result: Gen={result.Generation}, Fitness={result.BestFitness:F4}, Distance={result.BestDistance:F2}");
+        
+        if (result.Generation % 10 == 0 || result.IsComplete)
+        {
+            AddLogEntry($"Gen {result.Generation}: Best={result.BestFitness:F2}, Avg={result.AverageFitness:F2}, Time={result.ElapsedMilliseconds}ms");
+        }
+        
+        // Update chart every 5 generations or when complete for better performance
+        if (result.Generation % 5 == 0 || result.IsComplete)
+        {
+            await UpdateConvergenceChart();
+        }
+        
+        if (result.IsComplete)
+        {
+            isSolving = false;
+            AddLogEntry($"Completed! Final best distance: {result.BestDistance:F2}");
+            
+            // Final chart update with all data
+            await UpdateConvergenceChart();
+        }
+        
+        await InvokeAsync(() =>
+        {
+            StateHasChanged();
+            _ = Task.Run(async () =>
+            {
+                await DrawTour(result.BestTour);
+                if (result.IsComplete)
+                {
+                    await UpdateConvergenceChart();
+                }
+            });
+        });
+    }
+
+    private async Task OnAcoResultReceived(AntColonyResult result)
+    {
+        currentAcoResult = result;
+        convergenceData.Add(result.BestDistance);
+        
+        AddLogEntry($"ACO Iter {result.Iteration}: Best={result.BestDistance:F2}, Avg={result.AverageDistance:F2}");
+        
+        if (result.IsComplete)
+        {
+            isSolving = false;
+            AddLogEntry($"ACO Completed! Final best distance: {result.BestDistance:F2}");
+        }
+        
+        await InvokeAsync(() =>
+        {
+            StateHasChanged();
+            _ = Task.Run(async () =>
+            {
+                await DrawTour(result.BestTour);
+                await UpdateAcoConvergenceChart();
+            });
+        });
+    }
+
+    private async Task OnSaResultReceived(SimulatedAnnealingResult result)
+    {
+        currentSaResult = result;
+        convergenceData.Add(result.BestDistance);
+        
+        AddLogEntry($"SA Iter {result.Iteration}: Best={result.BestDistance:F2}, Temp={result.CurrentTemperature:F1}, Phase={result.Phase}");
+        
+        if (result.IsComplete)
+        {
+            isSolving = false;
+            AddLogEntry($"SA Completed! Final best distance: {result.BestDistance:F2}");
+        }
+        
+        await InvokeAsync(() =>
+        {
+            StateHasChanged();
+            _ = Task.Run(async () =>
+            {
+                await DrawTour(result.BestTour.ToArray());
+                await UpdateSaConvergenceChart();
+            });
+        });
+    }
+
     private async Task UpdateConvergenceChart()
     {
         if (convergenceData.Count == 0) return;
         
         try 
         {
-            var canvasId = selectedAlgorithm == "Genetic Algorithm" ? "solverConvergenceChart" : "acoConvergenceChart";
-            
-            // Check if Chart.js is available
-            var chartJsAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof Chart !== 'undefined'");
-            if (!chartJsAvailable)
-            {
-                AddLogEntry("ERROR: Chart.js not loaded, waiting...");
-                await Task.Delay(1000); // Wait a second and try again
-                chartJsAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof Chart !== 'undefined'");
-                if (!chartJsAvailable)
-                {
-                    AddLogEntry("ERROR: Chart.js still not available after waiting");
-                    return;
-                }
-            }
-            
-            // Check if the function is available
             var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof updateConvergenceChart === 'function'");
             if (!functionAvailable)
             {
@@ -980,29 +1633,16 @@
                 return;
             }
             
-            // Check if canvas element exists
-            var canvasExists = await JSRuntime.InvokeAsync<bool>("eval", $"document.getElementById('{canvasId}') !== null");
-            if (!canvasExists)
-            {
-                AddLogEntry($"ERROR: {canvasId} element not found");
-                return;
-            }
+            var chartData = convergenceData.ToArray();
+            await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "solverConvergenceChart", chartData);
             
-            // Prepare data for the chart - ensure we have valid numeric values
-            var chartData = convergenceData
-                .Where(d => !double.IsNaN(d) && !double.IsInfinity(d) && d > 0)
-                .ToArray();
+            // Calculate convergence statistics
+            var improvement = chartData.Length > 1 ? 
+                ((chartData.Last() - chartData.First()) / chartData.First() * 100) : 0;
+            var currentFitness = chartData.Last();
+            var estimatedDistance = currentFitness > 0 ? 1000.0 / currentFitness : 0;
             
-            if (chartData.Length == 0)
-            {
-                AddLogEntry("WARNING: No valid convergence data to display");
-                return;
-            }
-            
-            // Update the chart with validated data
-            await JSRuntime.InvokeVoidAsync("updateConvergenceChart", canvasId, chartData);
-            
-            AddLogEntry($"Chart updated: {chartData.Length} points");
+            AddLogEntry($"Chart updated: {chartData.Length} points, Current fitness: {currentFitness:F4}, Distance: {estimatedDistance:F2}, Improvement: {improvement:F1}%");
         }
         catch (JSException jsEx)
         {
@@ -1014,135 +1654,113 @@
         }
     }
 
-    private async Task ClearConvergenceChart()
+    private async Task UpdateAcoConvergenceChart()
     {
-        try
+        if (convergenceData.Count == 0) return;
+        
+        try 
         {
-            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof clearConvergenceChart === 'function'");
-            if (functionAvailable)
+            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof updateConvergenceChart === 'function'");
+            if (!functionAvailable)
             {
-                await JSRuntime.InvokeVoidAsync("clearConvergenceChart");
-                AddLogEntry("Convergence chart cleared");
+                AddLogEntry("ERROR: updateConvergenceChart function not available");
+                return;
             }
+            
+            var chartData = convergenceData.ToArray();
+            await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "acoConvergenceChart", chartData);
+            
+            AddLogEntry($"ACO chart updated with {chartData.Length} points");
         }
         catch (Exception ex)
         {
-            AddLogEntry($"Error clearing convergence chart: {ex.Message}");
+            AddLogEntry($"Error updating ACO convergence chart: {ex.Message}");
+        }
+    }
+
+    private async Task UpdateSaConvergenceChart()
+    {
+        if (convergenceData.Count == 0) return;
+        
+        try 
+        {
+            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof updateConvergenceChart === 'function'");
+            if (!functionAvailable)
+            {
+                AddLogEntry("ERROR: updateConvergenceChart function not available");
+                return;
+            }
+            
+            var chartData = convergenceData.ToArray();
+            await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "saConvergenceChart", chartData);
+            
+            AddLogEntry($"SA chart updated with {chartData.Length} points");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error updating SA convergence chart: {ex.Message}");
         }
     }
 
     private void OnAlgorithmChanged()
     {
+        AddLogEntry($"Algorithm changed to: {selectedAlgorithm}");
         UpdateAlgorithmDescription();
-        StateHasChanged();
     }
 
     private void UpdateAlgorithmDescription()
     {
-        var selectedSolver = availableSolvers.FirstOrDefault(s => s.Name == selectedAlgorithm);
-        selectedAlgorithmDescription = selectedSolver?.Description ?? "";
-    }
-
-    private async Task RunSelectedAlgorithm()
-    {
-        if (cities == null || isSolving) return;
-
-        var solver = availableSolvers.FirstOrDefault(s => s.Name == selectedAlgorithm);
-        if (solver == null)
+        // Update description based on selected algorithm
+        switch (selectedAlgorithm)
         {
-            AddLogEntry($"ERROR: Algorithm '{selectedAlgorithm}' not found");
-            return;
-        }
-
-        isSolving = true;
-        AddLogEntry($"Starting {solver.Name}...");
-        StateHasChanged();
-
-        try
-        {
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var tour = await solver.SolveAsync(cities);
-            stopwatch.Stop();
-
-            lastSolverResult = new SolverResult
-            {
-                AlgorithmName = solver.Name,
-                Distance = tour.Distance,
-                ExecutionTime = stopwatch.Elapsed,
-                Tour = tour
-            };
-
-            AddLogEntry($"Completed! Distance: {tour.Distance:F2}, Time: {stopwatch.ElapsedMilliseconds}ms");
-
-            // Draw the tour
-            await DrawTour(tour.Cities.ToArray());
-        }
-        catch (Exception ex)
-        {
-            AddLogEntry($"Error running {solver.Name}: {ex.Message}");
-        }
-        finally
-        {
-            isSolving = false;
-            StateHasChanged();
+            case "Genetic Algorithm":
+                AddLogEntry("Genetic Algorithm: Evolutionary approach using crossover and mutation");
+                break;
+            case "Ant Colony Optimization":
+                AddLogEntry("Ant Colony Optimization: Nature-inspired algorithm using pheromone trails");
+                break;
+            case "Simulated Annealing":
+                AddLogEntry("Simulated Annealing: Metaheuristic using probabilistic acceptance to escape local optima");
+                break;
+            case "Nearest Neighbor":
+                AddLogEntry("Nearest Neighbor: Simple heuristic always choosing closest unvisited city");
+                break;
+            case "2-Opt":
+                AddLogEntry("2-Opt: Local search algorithm that improves tours by swapping edges");
+                break;
+            default:
+                AddLogEntry($"Selected algorithm: {selectedAlgorithm}");
+                break;
         }
     }
 
-    private void ValidateAndCorrectAcoConfig()
+    private double TryConvertToDouble(string value)
     {
-        var corrected = false;
-        
-        if (acoConfig.AntCount < 5)
-        {
-            acoConfig.AntCount = 5;
-            corrected = true;
-        }
-        else if (acoConfig.AntCount > 500)
-        {
-            acoConfig.AntCount = 500;
-            corrected = true;
-        }
-        
-        if (acoConfig.MaxIterations < 50)
-        {
-            acoConfig.MaxIterations = 50;
-            corrected = true;
-        }
-        else if (acoConfig.MaxIterations > 2000)
-        {
-            acoConfig.MaxIterations = 2000;
-            corrected = true;
-        }
-        
-        // Auto-adjust progress report interval for performance
-        if (acoConfig.AntCount > 200 && acoConfig.ProgressReportInterval < 20)
-        {
-            acoConfig.ProgressReportInterval = 20;
-            corrected = true;
-            AddLogEntry("Progress report interval increased for better performance with high ant count");
-        }
-        else if (acoConfig.AntCount <= 200 && acoConfig.ProgressReportInterval > 10)
-        {
-            acoConfig.ProgressReportInterval = 10;
-            corrected = true;
-        }
-        
-        if (corrected)
-        {
-            AddLogEntry("ACO parameters were automatically corrected to valid ranges");
-            StateHasChanged();
-        }
+        if (double.TryParse(value, out var result))
+            return result;
+        return 0.0;
     }
 
-    private void OnAcoConfigChanged()
+    private bool TryConvertToDouble(object value, out double result)
     {
-        ValidateAndCorrectAcoConfig();
+        result = 0.0;
+        if (value == null) return false;
+        
+        if (value is double d)
+        {
+            result = d;
+            return true;
+        }
+        
+        return double.TryParse(value.ToString(), out result);
     }
 
     public async ValueTask DisposeAsync()
     {
         SignalRService.UnsubscribeFromResults(OnGAResultReceived);
         SignalRService.UnsubscribeFromAcoResults(OnAcoResultReceived);
+        SignalRService.UnsubscribeFromSaResults(OnSaResultReceived);
+        CityDataService.OnCitiesChanged -= OnCitiesChanged;
         await SignalRService.DisposeAsync();
     }
 }

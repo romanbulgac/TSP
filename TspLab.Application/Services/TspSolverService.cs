@@ -59,6 +59,41 @@ public sealed class TspSolverService
     }
 
     /// <summary>
+    /// Solves TSP using genetic algorithm with pause/resume support
+    /// </summary>
+    /// <param name="resumeState">Optional state to resume from</param>
+    /// <param name="cities">Array of cities to visit</param>
+    /// <param name="config">GA configuration</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Async enumerable of generation results</returns>
+    public async IAsyncEnumerable<GeneticAlgorithmResult> SolveWithStateAsync(
+        GeneticAlgorithmState? resumeState,
+        City[] cities,
+        GeneticAlgorithmConfig config,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(cities);
+        if (cities.Length < 3)
+            throw new ArgumentException("At least 3 cities are required", nameof(cities));
+
+        _logger.LogInformation("Starting TSP solve for {CityCount} cities with state support", cities.Length);
+
+        // Resolve strategies upfront to validate them
+        var crossover = _strategyResolver.ResolveCrossover(config.CrossoverName);
+        var mutation = _strategyResolver.ResolveMutation(config.MutationName);
+        var fitnessFunction = _strategyResolver.ResolveFitnessFunction(config.FitnessFunctionName);
+
+        _logger.LogInformation("Using strategies: Crossover={Crossover}, Mutation={Mutation}, Fitness={Fitness}",
+            crossover.Name, mutation.Name, fitnessFunction.Name);
+
+        // Run genetic algorithm with state support and stream results
+        await foreach (var result in _geneticEngine.RunWithStateAsync(resumeState, cities, config, crossover, mutation, fitnessFunction, cancellationToken))
+        {
+            yield return result;
+        }
+    }
+
+    /// <summary>
     /// Gets available strategy options
     /// </summary>
     /// <returns>Available strategies for crossover, mutation, and fitness functions</returns>

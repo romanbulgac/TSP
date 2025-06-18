@@ -101,3 +101,73 @@ a, .btn-link {
 code {
     color: #c02d76;
 }
+
+/* Chart optimization styles */
+.chart-container {
+    position: relative;
+    height: 300px !important;
+    width: 100% !important;
+    margin: 1rem 0;
+    overflow: hidden;
+}
+
+.chart-container canvas {
+    max-height: 300px !important;
+    height: 300px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* Convergence chart specific styles */
+.convergence-chart-container {
+    position: relative;
+    height: 300px !important;
+    width: 100% !important;
+    margin: 1rem 0;
+    overflow: hidden;
+}
+
+.convergence-chart-container canvas {
+    max-height: 300px !important;
+    height: 300px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* Benchmark chart specific styles */
+.benchmark-chart-container {
+    position: relative;
+    height: 350px !important;
+    width: 100% !important;
+    margin: 1rem 0;
+    overflow: hidden;
+}
+
+.benchmark-chart-container canvas {
+    max-height: 350px !important;
+    height: 350px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* Force all canvas elements to respect container sizes */
+canvas {
+    display: block !important;
+    box-sizing: border-box !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .chart-container,
+    .convergence-chart-container,
+    .benchmark-chart-container {
+        height: 250px !important;
+    }
+    
+    .chart-container canvas,
+    .convergence-chart-container canvas,
+    .benchmark-chart-container canvas {
+        max-height: 250px !important;
+        height: 250px !important;
+    }
+}

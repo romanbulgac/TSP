@@ -65,8 +65,8 @@ public sealed class AntColonyOptimizationSolver : ITspSolver
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Async enumerable of iteration results</returns>
     public async IAsyncEnumerable<AntColonyResult> SolveWithProgressAsync(
-        City[] cities, 
-        AntColonyConfig config, 
+        City[] cities,
+        AntColonyConfig config,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(cities);
@@ -142,7 +142,7 @@ public sealed class AntColonyOptimizationSolver : ITspSolver
             {
                 // Yield control to allow UI updates and cancellation checks
                 await Task.Yield();
-                
+
                 yield return new AntColonyResult
                 {
                     Iteration = iteration,
@@ -171,7 +171,7 @@ public sealed class AntColonyOptimizationSolver : ITspSolver
         if (!cancellationToken.IsCancellationRequested)
         {
             await Task.Yield();
-            
+
             yield return new AntColonyResult
             {
                 Iteration = config.MaxIterations - 1,
