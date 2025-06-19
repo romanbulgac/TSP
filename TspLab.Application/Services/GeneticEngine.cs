@@ -376,8 +376,20 @@ public sealed class GeneticEngine
             var parent1 = TournamentSelection(population, config.TournamentSize);
             var parent2 = TournamentSelection(population, config.TournamentSize);
 
-            // Crossover
-            var (offspring1, offspring2) = crossover.Crossover(parent1, parent2, _random);
+            Tour offspring1, offspring2;
+
+            // Apply crossover based on crossover rate
+            if (_random.NextDouble() < config.CrossoverRate)
+            {
+                // Crossover
+                (offspring1, offspring2) = crossover.Crossover(parent1, parent2, _random);
+            }
+            else
+            {
+                // No crossover - just copy parents
+                offspring1 = parent1.Clone();
+                offspring2 = parent2.Clone();
+            }
 
             // Mutation
             mutation.Mutate(offspring1, _random);

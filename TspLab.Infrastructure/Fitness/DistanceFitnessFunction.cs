@@ -78,7 +78,13 @@ public sealed class DistanceFitnessFunction : IFitnessFunction
         var cacheKey = CreateCacheKey(tour);
 
         if (_cache.TryGetValue(cacheKey, out double cachedDistance))
-            return cachedDistance;
+        {
+            // Validate cached distance
+            if (cachedDistance > 0 && !double.IsNaN(cachedDistance) && !double.IsInfinity(cachedDistance))
+                return cachedDistance;
+            else
+                _cache.Remove(cacheKey); // Remove invalid cached value
+        }
 
         var distance = 0.0;
         var tourCities = tour.Cities;
@@ -148,8 +154,9 @@ public sealed class DistanceFitnessFunction : IFitnessFunction
 
     private static string CreateCacheKey(Tour tour)
     {
-        // Simple hash-based cache key
-        var hash = tour.GetHashCode();
-        return $"distance_{hash}";
+        // Create more robust cache key to avoid hash collisions
+        // Use sequence of cities instead of just hash
+        var citySequence = string.Join(",", tour.Cities.ToArray());
+        return $"distance_{citySequence}";
     }
 }

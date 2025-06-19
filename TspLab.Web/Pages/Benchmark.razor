@@ -124,6 +124,24 @@
                                     <input @bind="populationSize" type="number" min="20" max="200"
                                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
                                 </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Mutation Rate</label>
+                                    <input @bind="mutationRate" type="number" step="0.001" min="0" max="1"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Crossover Rate</label>
+                                    <input @bind="crossoverRate" type="number" step="0.01" min="0" max="1"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Elitism Rate</label>
+                                    <input @bind="elitismRate" type="number" step="0.01" min="0" max="1"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                </div>
                             </div>
                         </div>
 
@@ -284,6 +302,9 @@
     private int runsPerConfig = 3;
     private int maxGenerations = 200;
     private int populationSize = 50;
+    private double mutationRate = 0.02;
+    private double crossoverRate = 0.8;
+    private double elitismRate = 0.1;
 
     private List<TestProblem> testProblems = new();
     private List<TspLibTestProblem> tspLibProblems = new();
@@ -465,8 +486,9 @@
                         {
                             PopulationSize = populationSize,
                             MaxGenerations = maxGenerations,
-                            MutationRate = 0.02,
-                            ElitismRate = 0.1,
+                            MutationRate = mutationRate,
+                            CrossoverRate = crossoverRate,
+                            ElitismRate = elitismRate,
                             CrossoverName = algorithmConfig.CrossoverName,
                             MutationName = algorithmConfig.MutationName
                         };
@@ -591,8 +613,9 @@
                         {
                             PopulationSize = populationSize,
                             MaxGenerations = maxGenerations,
-                            MutationRate = 0.02,
-                            ElitismRate = 0.1,
+                            MutationRate = mutationRate,
+                            CrossoverRate = crossoverRate,
+                            ElitismRate = elitismRate,
                             CrossoverName = algorithmConfig.CrossoverName,
                             MutationName = algorithmConfig.MutationName
                         };
@@ -730,25 +753,73 @@
     {
         try
         {
-            var tour = await solver.SolveAsync(cities);
-            
-            // Calculate the tour distance
-            double totalDistance = 0;
-            for (int i = 0; i < tour.Cities.Length; i++)
+            // Special handling for ACO (Ant Colony Optimization)
+            if (solver.Name == "Ant Colony Optimization")
             {
-                var fromIndex = tour.Cities[i];
-                var toIndex = tour.Cities[(i + 1) % tour.Cities.Length];
-                var fromCity = cities[fromIndex];
-                var toCity = cities[toIndex];
-                totalDistance += fromCity.DistanceTo(toCity);
+                return await RunSingleAcoBenchmark(cities);
+            }
+            // Special handling for SA (Simulated Annealing)
+            else if (solver.Name == "Simulated Annealing")
+            {
+                return await RunSingleSaBenchmark(cities);
             }
             
-            return totalDistance;
+            // For other algorithms, use direct solving
+            var tour = await solver.SolveAsync(cities);
+            return tour.Distance; // Use the built-in distance calculation
         }
         catch (Exception ex)
         {
             AddLogEntry($"Error running {solver.Name}: {ex.Message}");
             return double.MaxValue;
+        }
+    }
+
+    private async Task<double> RunSingleAcoBenchmark(City[] cities)
+    {
+        var tcs = new TaskCompletionSource<double>();
+        AntColonyResult? lastResult = null;
+
+        Task acoResultHandler(AntColonyResult result)
+        {
+            lastResult = result;
+            if (result.IsComplete)
+            {
+                tcs.SetResult(result.BestDistance);
+            }
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            // Create ACO config with benchmark parameters
+            var acoConfig = new AntColonyConfig
+            {
+                AntCount = populationSize, // Use population size as ant count
+                MaxIterations = maxGenerations, // Use max generations as max iterations
+                Alpha = 1.0,
+                Beta = 2.0,
+                EvaporationRate = 0.5,
+                InitialPheromone = 0.1,
+                EliteAntCount = 1,
+                UseLocalSearch = true,
+                ProgressReportInterval = 10
+            };
+
+            SignalRService.SubscribeToAcoResults(acoResultHandler);
+            await ApiService.StartAcoSolvingAsync(cities, acoConfig, SignalRService.ConnectionId);
+            
+            // Wait for completion or timeout (60 seconds)
+            var result = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(60));
+            return result;
+        }
+        catch (TimeoutException)
+        {
+            return lastResult?.BestDistance ?? double.MaxValue;
+        }
+        finally
+        {
+            SignalRService.UnsubscribeFromAcoResults(acoResultHandler);
         }
     }
 
@@ -784,6 +855,53 @@
         finally
         {
             SignalRService.UnsubscribeFromResults(resultHandler);
+        }
+    }
+
+    private async Task<double> RunSingleSaBenchmark(City[] cities)
+    {
+        var tcs = new TaskCompletionSource<double>();
+        SimulatedAnnealingResult? lastResult = null;
+
+        Task saResultHandler(SimulatedAnnealingResult result)
+        {
+            lastResult = result;
+            if (result.IsComplete)
+            {
+                tcs.SetResult(result.BestDistance);
+            }
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            // Create SA config with benchmark parameters
+            var saConfig = new SimulatedAnnealingConfig
+            {
+                InitialTemperature = 10000.0,
+                FinalTemperature = 1.0,
+                MaxIterations = maxGenerations,
+                CoolingRate = 0.995,
+                TwoOptProbability = 0.7,
+                UseNearestNeighborInitialization = true,
+                EnableAdaptiveReheating = true,
+                ReheatCheckInterval = 1000
+            };
+
+            SignalRService.SubscribeToSaResults(saResultHandler);
+            await ApiService.StartSaSolvingAsync(cities, saConfig, SignalRService.ConnectionId);
+            
+            // Wait for completion or timeout (60 seconds)
+            var result = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(60));
+            return result;
+        }
+        catch (TimeoutException)
+        {
+            return lastResult?.BestDistance ?? double.MaxValue;
+        }
+        finally
+        {
+            SignalRService.UnsubscribeFromSaResults(saResultHandler);
         }
     }
 

@@ -130,6 +130,12 @@
                                     </div>
                                     
                                     <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Crossover Rate</label>
+                                        <input @bind="config.CrossoverRate" type="number" step="0.01" min="0" max="1"
+                                               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                    
+                                    <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Elitism Rate</label>
                                         <input @bind="config.ElitismRate" type="number" step="0.01" min="0" max="1"
                                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
@@ -359,7 +365,7 @@
                                                 <div class="flex items-center justify-between p-2 bg-gray-50 rounded border">
                                                     <div class="flex-1 text-xs">
                                                         <div class="font-medium">Gen: @state.CurrentGeneration/@state.MaxGenerations</div>
-                                                        <div class="text-gray-600">Distance: @state.BestDistance.ToString("F1")</div>
+                                                        <div class="text-gray-600">Distance: @(state.BestDistance.ToString("F1"))</div>
                                                         <div class="text-gray-500">@state.SavedAt.ToString("MM/dd HH:mm")</div>
                                                     </div>
                                                     <div class="flex space-x-1">
@@ -649,8 +655,9 @@
                 </div>
             </div>
         </div>
-    </div>
 </div>
+</div>
+
 
 @code {
     private City[]? cities;
@@ -677,6 +684,7 @@
         PopulationSize = 50,
         MaxGenerations = 500,
         MutationRate = 0.02,
+        CrossoverRate = 0.8,
         ElitismRate = 0.1,
         CrossoverName = "OrderCrossover",
         MutationName = "SwapMutation"
@@ -1224,7 +1232,31 @@
         }
     }
 
-    // ...existing code...
+    /// <summary>
+    /// Manually calculates tour distance for validation purposes
+    /// </summary>
+    private double CalculateManualDistance(int[] tour)
+    {
+        if (tour == null || cities == null || tour.Length == 0)
+            return double.MaxValue;
+
+        var distance = 0.0;
+        for (int i = 0; i < tour.Length; i++)
+        {
+            var fromIndex = tour[i];
+            var toIndex = tour[(i + 1) % tour.Length];
+            
+            if (fromIndex < 0 || fromIndex >= cities.Length || 
+                toIndex < 0 || toIndex >= cities.Length)
+                return double.MaxValue;
+                
+            var fromCity = cities[fromIndex];
+            var toCity = cities[toIndex];
+            distance += fromCity.DistanceTo(toCity);
+        }
+        
+        return distance;
+    }
 
     private async Task RunSelectedAlgorithm()
     {
@@ -1533,14 +1565,33 @@
     private async Task OnGAResultReceived(GeneticAlgorithmResult result)
     {
         currentResult = result;
-        convergenceData.Add(result.BestFitness);
-        
+        convergenceData.Add(result.BestDistance);
         // Debug information
         AddLogEntry($"Received result: Gen={result.Generation}, Fitness={result.BestFitness:F4}, Distance={result.BestDistance:F2}");
         
         if (result.Generation % 10 == 0 || result.IsComplete)
         {
-            AddLogEntry($"Gen {result.Generation}: Best={result.BestFitness:F2}, Avg={result.AverageFitness:F2}, Time={result.ElapsedMilliseconds}ms");
+            AddLogEntry($"Gen {result.Generation}: Best Distance={result.BestDistance:F2}, Avg Fitness={result.AverageFitness:F2}, Time={result.ElapsedMilliseconds}ms");
+        }
+        
+        // Validate tour consistency
+        if (result.BestTour != null && cities != null)
+        {
+            try
+            {
+                // Manually calculate distance to verify correctness
+                var manualDistance = CalculateManualDistance(result.BestTour);
+                var discrepancy = Math.Abs(manualDistance - result.BestDistance);
+                
+                if (discrepancy > 0.01) // Allow small floating point differences
+                {
+                    AddLogEntry($"WARNING: Distance discrepancy detected! Manual: {manualDistance:F2}, GA: {result.BestDistance:F2}, Diff: {discrepancy:F2}");
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLogEntry($"Error validating tour distance: {ex.Message}");
+            }
         }
         
         // Update chart every 5 generations or when complete for better performance
@@ -1563,13 +1614,17 @@
             StateHasChanged();
             _ = Task.Run(async () =>
             {
-                await DrawTour(result.BestTour);
+                if (result.BestTour != null)
+                {
+                    await DrawTour(result.BestTour);
+                }
                 if (result.IsComplete)
                 {
                     await UpdateConvergenceChart();
                 }
             });
-        });
+        });     
+    
     }
 
     private async Task OnAcoResultReceived(AntColonyResult result)
@@ -1590,7 +1645,10 @@
             StateHasChanged();
             _ = Task.Run(async () =>
             {
-                await DrawTour(result.BestTour);
+                if (result.BestTour != null)
+                {
+                    await DrawTour(result.BestTour);
+                }
                 await UpdateAcoConvergenceChart();
             });
         });
@@ -1626,23 +1684,15 @@
         
         try 
         {
-            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof updateConvergenceChart === 'function'");
-            if (!functionAvailable)
-            {
-                AddLogEntry("ERROR: updateConvergenceChart function not available");
-                return;
-            }
-            
             var chartData = convergenceData.ToArray();
             await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "solverConvergenceChart", chartData);
             
-            // Calculate convergence statistics
+            // Calculate convergence statistics - now using distance values directly
             var improvement = chartData.Length > 1 ? 
-                ((chartData.Last() - chartData.First()) / chartData.First() * 100) : 0;
-            var currentFitness = chartData.Last();
-            var estimatedDistance = currentFitness > 0 ? 1000.0 / currentFitness : 0;
+                ((chartData.First() - chartData.Last()) / chartData.First() * 100) : 0; // Inverted because lower distance is better
+            var currentDistance = chartData.Last();
             
-            AddLogEntry($"Chart updated: {chartData.Length} points, Current fitness: {currentFitness:F4}, Distance: {estimatedDistance:F2}, Improvement: {improvement:F1}%");
+            AddLogEntry($"Chart updated: {chartData.Length} points, Current distance: {currentDistance:F2}, Improvement: {improvement:F1}%");
         }
         catch (JSException jsEx)
         {
@@ -1660,13 +1710,6 @@
         
         try 
         {
-            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof updateConvergenceChart === 'function'");
-            if (!functionAvailable)
-            {
-                AddLogEntry("ERROR: updateConvergenceChart function not available");
-                return;
-            }
-            
             var chartData = convergenceData.ToArray();
             await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "acoConvergenceChart", chartData);
             
@@ -1684,13 +1727,6 @@
         
         try 
         {
-            var functionAvailable = await JSRuntime.InvokeAsync<bool>("eval", "typeof updateConvergenceChart === 'function'");
-            if (!functionAvailable)
-            {
-                AddLogEntry("ERROR: updateConvergenceChart function not available");
-                return;
-            }
-            
             var chartData = convergenceData.ToArray();
             await JSRuntime.InvokeVoidAsync("updateConvergenceChart", "saConvergenceChart", chartData);
             
