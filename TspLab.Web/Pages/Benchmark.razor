@@ -10,6 +10,8 @@
 @inject IJSRuntime JSRuntime
 @inject IEnumerable<ITspSolver> TspSolvers
 @inject TspLibDataService TspLibDataService
+@inject TspLab.Application.Services.BenchmarkDataCollector DataCollector
+@inject TspLab.Application.Services.CsvExportService CsvExportService
 @implements IAsyncDisposable
 
 <div class="min-h-screen bg-gray-50">
@@ -159,6 +161,45 @@
                                     class="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50">
                                 Clear Results
                             </button>
+                            
+                            <!-- CSV Export Buttons -->
+                            <div class="border-t pt-4 mt-4">
+                                <h4 class="text-sm font-medium text-gray-700 mb-2">Export Data for Analysis</h4>
+                                <div class="space-y-2">
+                                    <button @onclick="@(() => DownloadCsvData("detailed"))" disabled="@(!HasDataToExport())"
+                                            class="w-full px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm">
+                                        📊 Download Detailed Steps CSV
+                                    </button>
+                                    <button @onclick="@(() => DownloadCsvData("convergence"))" disabled="@(!HasDataToExport())"
+                                            class="w-full px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 text-sm">
+                                        📈 Download Convergence CSV
+                                    </button>
+                                    <button @onclick="@(() => DownloadCsvData("summary"))" disabled="@(!HasDataToExport())"
+                                            class="w-full px-3 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 text-sm">
+                                        📋 Download Summary CSV
+                                    </button>
+                                    <button @onclick="@(() => DownloadCsvData("comprehensive"))" disabled="@(!HasDataToExport())"
+                                            class="w-full px-3 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 text-sm">
+                                        📦 Download Complete ZIP
+                                    </button>
+                                    <button @onclick="@(() => DownloadCsvData("individual-runs"))" disabled="@(!HasDataToExport())"
+                                            class="w-full px-3 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 text-sm">
+                                        📁 Download Individual Run Files
+                                    </button>
+                                </div>
+                                
+                                @if (dataCollectionSummary != null)
+                                {
+                                    <div class="mt-3 p-2 bg-gray-50 rounded text-xs">
+                                        <div class="font-medium text-gray-700">Data Collected:</div>
+                                        <div class="text-gray-600">
+                                            • @dataCollectionSummary.CompletedRuns completed runs<br/>
+                                            • @dataCollectionSummary.TotalStepsCollected total steps<br/>
+                                            • @string.Join(", ", dataCollectionSummary.Algorithms) algorithms
+                                        </div>
+                                    </div>
+                                }
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -302,6 +343,12 @@
     private int runsPerConfig = 3;
     private int maxGenerations = 200;
     private int populationSize = 50;
+    
+    // Performance optimization settings
+    private const int MAX_VISIBLE_RESULTS = 50; // Limit displayed results
+    private const int UI_UPDATE_THROTTLE_MS = 1000; // Update UI max once per second
+    private DateTime lastUiUpdate = DateTime.MinValue;
+    private bool isPendingUiUpdate = false;
     private double mutationRate = 0.02;
     private double crossoverRate = 0.8;
     private double elitismRate = 0.1;
@@ -313,6 +360,10 @@
     private List<BenchmarkResult> benchmarkResults = new();
     private List<DetailedResult> detailedResults = new();
     private List<string> benchmarkLog = new();
+    
+    // CSV Export data tracking
+    private DataCollectionSummary? dataCollectionSummary;
+    private readonly Dictionary<string, string> activeRunIds = new();
 
     // Classes for algorithm selection
     public class AlgorithmSelection
@@ -406,6 +457,10 @@
         benchmarkResults.Clear();
         detailedResults.Clear();
         
+        // Clear previous data collection
+        DataCollector.ClearAllData();
+        UpdateDataCollectionSummary();
+        
         var selectedProblems = testProblems.Where(p => p.IsSelected).ToList();
         var selectedTspLibProblems = tspLibProblems.Where(p => p.IsSelected).ToList();
         var selectedAlgorithms = availableAlgorithms.Where(a => a.IsSelected).ToList();
@@ -433,6 +488,10 @@
                         currentBenchmarkStatus = $"Running {problem.Name} with {algorithm.Name} (Run {run}/{runsPerConfig})";
                         StateHasChanged();
 
+                        // Start data collection for this run
+                        var runId = DataCollector.StartRun(algorithm.Name, problem.Name, "Direct Algorithm", run);
+                        activeRunIds[$"{algorithm.Name}_{problem.Name}_{run}"] = runId;
+
                         var startTime = DateTime.Now;
                         var tour = await algorithm.Solver.SolveAsync(cities);
                         var endTime = DateTime.Now;
@@ -440,6 +499,9 @@
 
                         results.Add(tour.Distance);
                         times.Add(duration);
+                        
+                        // Record data collection result
+                        DataCollector.RecordDirectAlgorithmResult(runId, tour.Distance, (long)(duration * 1000));
                         
                         detailedResults.Add(new DetailedResult
                         {
@@ -454,6 +516,9 @@
                         benchmarkProgress = (double)completedRuns / totalRuns;
                         
                         AddLogEntry($"  Run {run}: Distance = {tour.Distance:F2}, Time = {duration:F1}s");
+                        
+                        // Update data collection summary
+                        UpdateDataCollectionSummary();
                     }
                     
                     // Add benchmark result summary for this algorithm
@@ -490,11 +555,16 @@
                             CrossoverRate = crossoverRate,
                             ElitismRate = elitismRate,
                             CrossoverName = algorithmConfig.CrossoverName,
-                            MutationName = algorithmConfig.MutationName
+                            MutationName = algorithmConfig.MutationName,
+                            StagnationLimit = maxGenerations // Set to max generations to prevent early stopping
                         };
 
+                        // Start data collection for this run
+                        var runId = DataCollector.StartRun(algorithmConfig.Name, problem.Name, CreateRunConfiguration(config), run);
+                        activeRunIds[$"{algorithmConfig.Name}_{problem.Name}_{run}"] = runId;
+
                         var startTime = DateTime.Now;
-                        var bestDistance = await RunSingleBenchmark(cities, config);
+                        var bestDistance = await RunSingleBenchmark(cities, config, runId);
                         var endTime = DateTime.Now;
                         var duration = (endTime - startTime).TotalSeconds;
 
@@ -514,6 +584,9 @@
                         benchmarkProgress = (double)completedRuns / totalRuns;
                         
                         AddLogEntry($"Completed {problem.Name} with {algorithmConfig.Name} run {run}: {bestDistance:F2}");
+                        
+                        // Update data collection summary
+                        UpdateDataCollectionSummary();
                         
                         if (!isBenchmarking) break; // Check for cancellation
                     }
@@ -556,8 +629,13 @@
                         currentBenchmarkStatus = $"Running {tspLibProblem.Name} with {solver.Name} (Run {run}/{runsPerConfig})";
                         StateHasChanged();
 
+                        // Start data collection for this run
+                        var config = GetAlgorithmConfigString(solver.Name);
+                        var runId = DataCollector.StartRun(solver.Name, tspLibProblem.Name, config, run);
+                        activeRunIds[$"{solver.Name}_{tspLibProblem.Name}_{run}"] = runId;
+
                         var startTime = DateTime.Now;
-                        var bestDistance = await RunSingleAlgorithmBenchmark(cities, solver.Solver);
+                        var bestDistance = await RunSingleAlgorithmBenchmark(cities, solver.Solver, runId);
                         var endTime = DateTime.Now;
                         var duration = (endTime - startTime).TotalSeconds;
 
@@ -617,11 +695,16 @@
                             CrossoverRate = crossoverRate,
                             ElitismRate = elitismRate,
                             CrossoverName = algorithmConfig.CrossoverName,
-                            MutationName = algorithmConfig.MutationName
+                            MutationName = algorithmConfig.MutationName,
+                            StagnationLimit = maxGenerations // Set to max generations to prevent early stopping
                         };
 
+                        // Start data collection for this run
+                        var runId = DataCollector.StartRun(algorithmConfig.Name, tspLibProblem.Name, CreateRunConfiguration(config), run);
+                        activeRunIds[$"{algorithmConfig.Name}_{tspLibProblem.Name}_{run}"] = runId;
+
                         var startTime = DateTime.Now;
-                        var bestDistance = await RunSingleBenchmark(cities, config);
+                        var bestDistance = await RunSingleBenchmark(cities, config, runId);
                         var endTime = DateTime.Now;
                         var duration = (endTime - startTime).TotalSeconds;
 
@@ -749,23 +832,30 @@
         return Task.FromResult(cities);
     }
 
-    private async Task<double> RunSingleAlgorithmBenchmark(City[] cities, ITspSolver solver)
+    private async Task<double> RunSingleAlgorithmBenchmark(City[] cities, ITspSolver solver, string? runId = null)
     {
         try
         {
             // Special handling for ACO (Ant Colony Optimization)
             if (solver.Name == "Ant Colony Optimization")
             {
-                return await RunSingleAcoBenchmark(cities);
+                return await RunSingleAcoBenchmark(cities, runId);
             }
             // Special handling for SA (Simulated Annealing)
             else if (solver.Name == "Simulated Annealing")
             {
-                return await RunSingleSaBenchmark(cities);
+                return await RunSingleSaBenchmark(cities, runId);
             }
             
             // For other algorithms, use direct solving
             var tour = await solver.SolveAsync(cities);
+            
+            // Record result if runId provided
+            if (!string.IsNullOrEmpty(runId))
+            {
+                DataCollector.RecordDirectAlgorithmResult(runId, tour.Distance, 0); // Time recorded externally
+            }
+            
             return tour.Distance; // Use the built-in distance calculation
         }
         catch (Exception ex)
@@ -775,7 +865,7 @@
         }
     }
 
-    private async Task<double> RunSingleAcoBenchmark(City[] cities)
+    private async Task<double> RunSingleAcoBenchmark(City[] cities, string? runId = null)
     {
         var tcs = new TaskCompletionSource<double>();
         AntColonyResult? lastResult = null;
@@ -783,6 +873,13 @@
         Task acoResultHandler(AntColonyResult result)
         {
             lastResult = result;
+            
+            // Record step data if runId is provided
+            if (!string.IsNullOrEmpty(runId))
+            {
+                DataCollector.RecordAntColonyStep(runId, result);
+            }
+            
             if (result.IsComplete)
             {
                 tcs.SetResult(result.BestDistance);
@@ -823,7 +920,7 @@
         }
     }
 
-    private async Task<double> RunSingleBenchmark(City[] cities, GeneticAlgorithmConfig config)
+    private async Task<double> RunSingleBenchmark(City[] cities, GeneticAlgorithmConfig config, string? runId = null)
     {
         var tcs = new TaskCompletionSource<double>();
         GeneticAlgorithmResult? lastResult = null;
@@ -831,6 +928,13 @@
         Task resultHandler(GeneticAlgorithmResult result)
         {
             lastResult = result;
+            
+            // Record step data if runId is provided
+            if (!string.IsNullOrEmpty(runId))
+            {
+                DataCollector.RecordGeneticAlgorithmStep(runId, result);
+            }
+            
             if (result.IsComplete)
             {
                 tcs.SetResult(result.BestDistance);
@@ -858,7 +962,7 @@
         }
     }
 
-    private async Task<double> RunSingleSaBenchmark(City[] cities)
+    private async Task<double> RunSingleSaBenchmark(City[] cities, string? runId = null)
     {
         var tcs = new TaskCompletionSource<double>();
         SimulatedAnnealingResult? lastResult = null;
@@ -866,6 +970,13 @@
         Task saResultHandler(SimulatedAnnealingResult result)
         {
             lastResult = result;
+            
+            // Record step data if runId is provided
+            if (!string.IsNullOrEmpty(runId))
+            {
+                DataCollector.RecordSimulatedAnnealingStep(runId, result);
+            }
+            
             if (result.IsComplete)
             {
                 tcs.SetResult(result.BestDistance);
@@ -1075,5 +1186,173 @@
         public int RunNumber { get; set; }
         public double FinalDistance { get; set; }
         public double TimeSeconds { get; set; }
+    }
+
+    // CSV Export methods
+    private async Task DownloadCsvData(string exportType)
+    {
+        try
+        {
+            var runs = DataCollector.GetBenchmarkRuns(includeActive: false);
+            
+            if (!runs.Any())
+            {
+                AddLogEntry("No completed benchmark data available for export");
+                return;
+            }
+
+            byte[] fileContent;
+            string fileName;
+            string mimeType;
+
+            switch (exportType)
+            {
+                case "detailed":
+                    // Export detailed step data from all runs
+                    var allStepData = runs.SelectMany(r => r.StepData).ToList();
+                    var detailedCsv = CsvExportService.ExportStepDataToCsv(allStepData);
+                    fileContent = System.Text.Encoding.UTF8.GetBytes(detailedCsv);
+                    fileName = CsvExportService.GenerateExportFilename("detailed_steps", "csv");
+                    mimeType = "text/csv";
+                    break;
+
+                case "summary":
+                    var summaryCsv = CsvExportService.ExportRunSummaryToCsv(runs);
+                    fileContent = System.Text.Encoding.UTF8.GetBytes(summaryCsv);
+                    fileName = CsvExportService.GenerateExportFilename("run_summary", "csv");
+                    mimeType = "text/csv";
+                    break;
+
+                case "convergence":
+                    var convergenceCsv = CsvExportService.ExportConvergenceDataToCsv(runs);
+                    fileContent = System.Text.Encoding.UTF8.GetBytes(convergenceCsv);
+                    fileName = CsvExportService.GenerateExportFilename("convergence_analysis", "csv");
+                    mimeType = "text/csv";
+                    break;
+
+                case "comprehensive":
+                    var exportRequest = new CsvExportRequest
+                    {
+                        Runs = runs,
+                        IncludeStepData = true,
+                        IncludeSummary = true,
+                        IncludeConfiguration = true
+                    };
+                    fileContent = CsvExportService.CreateFullExport(exportRequest);
+                    fileName = CsvExportService.GenerateExportFilename("comprehensive", "zip");
+                    mimeType = "application/zip";
+                    break;
+
+                case "individual-runs":
+                    var individualRequest = new CsvExportRequest
+                    {
+                        Runs = runs,
+                        IncludeStepData = true,
+                        IncludeSummary = true,
+                        IncludeConfiguration = true
+                    };
+                    fileContent = CsvExportService.CreateIndividualRunExport(individualRequest);
+                    fileName = CsvExportService.GenerateExportFilename("individual_runs", "zip");
+                    mimeType = "application/zip";
+                    break;
+
+                default:
+                    AddLogEntry($"Unknown export type: {exportType}");
+                    return;
+            }
+
+            // Download file using JavaScript interop
+            var base64Content = Convert.ToBase64String(fileContent);
+            await JSRuntime.InvokeVoidAsync("downloadBase64File", base64Content, fileName, mimeType);
+            
+            AddLogEntry($"Downloaded {exportType} data: {fileName}");
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error downloading {exportType} data: {ex.Message}");
+        }
+    }
+
+    private bool HasDataToExport()
+    {
+        return dataCollectionSummary?.CompletedRuns > 0;
+    }
+
+    /// <summary>
+    /// Throttled UI update to improve performance with large datasets
+    /// </summary>
+    private void ThrottledStateHasChanged()
+    {
+        var now = DateTime.Now;
+        if (now - lastUiUpdate > TimeSpan.FromMilliseconds(UI_UPDATE_THROTTLE_MS))
+        {
+            lastUiUpdate = now;
+            isPendingUiUpdate = false;
+            InvokeAsync(StateHasChanged);
+        }
+        else if (!isPendingUiUpdate)
+        {
+            isPendingUiUpdate = true;
+            _ = Task.Delay(UI_UPDATE_THROTTLE_MS).ContinueWith(_ =>
+            {
+                if (isPendingUiUpdate)
+                {
+                    lastUiUpdate = DateTime.Now;
+                    isPendingUiUpdate = false;
+                    InvokeAsync(StateHasChanged);
+                }
+            });
+        }
+    }
+
+    private void UpdateDataCollectionSummary()
+    {
+        try
+        {
+            dataCollectionSummary = DataCollector.GetCollectionSummary();
+        }
+        catch (Exception ex)
+        {
+            AddLogEntry($"Error updating data collection summary: {ex.Message}");
+        }
+    }
+
+    private string CreateRunConfiguration(dynamic config)
+    {
+        try
+        {
+            if (config == null) return "Default";
+            
+            var parts = new List<string>();
+            
+            // Add relevant configuration parameters
+            if (config.GetType().GetProperty("PopulationSize") != null)
+                parts.Add($"Pop:{config.PopulationSize}");
+            if (config.GetType().GetProperty("MaxGenerations") != null)
+                parts.Add($"Gen:{config.MaxGenerations}");
+            if (config.GetType().GetProperty("MutationRate") != null)
+                parts.Add($"Mut:{config.MutationRate:F2}");
+            if (config.GetType().GetProperty("CrossoverRate") != null)
+                parts.Add($"Cross:{config.CrossoverRate:F2}");
+            if (config.GetType().GetProperty("ElitismRate") != null)
+                parts.Add($"Elite:{config.ElitismRate:F2}");
+            
+            return parts.Any() ? string.Join("|", parts) : "Default";
+        }
+        catch
+        {
+            return "Default";
+        }
+    }
+
+    private string GetAlgorithmConfigString(string algorithmName)
+    {
+        return algorithmName switch
+        {
+            "Genetic Algorithm" => $"Pop:{populationSize}|Gen:{maxGenerations}",
+            "Ant Colony Optimization" => "ACO_Default",
+            "Simulated Annealing" => "SA_Default",
+            _ => "Default"
+        };
     }
 }

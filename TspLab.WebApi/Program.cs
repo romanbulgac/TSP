@@ -23,6 +23,10 @@ builder.Host.UseSerilog((context, config) =>
 builder.Services.AddInfrastructure();
 builder.Services.AddSignalR();
 
+// Register CSV export services
+builder.Services.AddSingleton<TspLab.Application.Services.CsvExportService>();
+builder.Services.AddSingleton<TspLab.Application.Services.BenchmarkDataCollector>();
+
 // Register state management
 builder.Services.AddScoped<TspLab.Domain.Interfaces.IAlgorithmStateManager, TspLab.Infrastructure.Services.ServerStateManager>();
 
@@ -54,10 +58,14 @@ builder.Services.AddSwaggerGen();
 
 // Add CORS for Blazor WebAssembly
 builder.Services.AddCors(options =>
-{
-    options.AddPolicy("BlazorWasm", policy =>
+{    options.AddPolicy("BlazorWasm", policy =>
     {
-        policy.WithOrigins("http://localhost:5177", "https://localhost:5177")
+        // Allow both local development and Docker origins
+        policy.WithOrigins(
+                "http://localhost:5277", "https://localhost:5277", // Local development ports
+                "http://localhost:8080", "https://localhost:8080", // Docker ports
+                "http://localhost", "https://localhost" // Docker internal
+              )
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials(); // Important for SignalR
@@ -118,8 +126,5 @@ app.MapHub<TspHub>("/tspHub");
 
 // Map health checks (keeping the simple health check endpoint as well)
 app.MapHealthChecks("/health");
-
-// Fallback to index.html for client-side routing (only for non-API routes)
-app.MapFallbackToFile("index.html");
 
 app.Run();

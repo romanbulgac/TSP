@@ -340,8 +340,34 @@ public sealed class GeneticEngine
         {
             Parallel.ForEach(population, tour =>
             {
-                tour.Fitness = fitnessFunction.CalculateFitness(tour, cities.AsSpan());
-                tour.Distance = fitnessFunction.CalculateDistance(tour, cities.AsSpan());
+                // Check if tour is valid first
+                if (!tour.IsValid())
+                {
+                    _logger.LogWarning("Invalid tour detected during evaluation: {Tour}", tour);
+                    tour.Fitness = 0.0; // Very bad fitness for invalid tours
+                    tour.Distance = double.MaxValue;
+                    return;
+                }
+
+                try
+                {
+                    tour.Fitness = fitnessFunction.CalculateFitness(tour, cities.AsSpan());
+                    tour.Distance = fitnessFunction.CalculateDistance(tour, cities.AsSpan());
+                    
+                    // Additional validation of calculated values
+                    if (double.IsNaN(tour.Fitness) || double.IsInfinity(tour.Fitness) || tour.Fitness < 0)
+                    {
+                        _logger.LogWarning("Invalid fitness calculated: {Fitness} for tour: {Tour}", tour.Fitness, tour);
+                        tour.Fitness = 0.0;
+                        tour.Distance = double.MaxValue;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error evaluating tour: {Tour}", tour);
+                    tour.Fitness = 0.0;
+                    tour.Distance = double.MaxValue;
+                }
             });
         });
     }
@@ -383,6 +409,18 @@ public sealed class GeneticEngine
             {
                 // Crossover
                 (offspring1, offspring2) = crossover.Crossover(parent1, parent2, _random);
+                
+                // Validate offspring - if invalid, use parents as fallback
+                if (!offspring1.IsValid())
+                {
+                    _logger.LogWarning("Invalid offspring1 after crossover, using parent1 as fallback");
+                    offspring1 = parent1.Clone();
+                }
+                if (!offspring2.IsValid())
+                {
+                    _logger.LogWarning("Invalid offspring2 after crossover, using parent2 as fallback");
+                    offspring2 = parent2.Clone();
+                }
             }
             else
             {
@@ -392,9 +430,24 @@ public sealed class GeneticEngine
             }
 
             // Mutation
+            var beforeMutation1 = offspring1.IsValid();
             mutation.Mutate(offspring1, _random);
+            if (!offspring1.IsValid())
+            {
+                _logger.LogWarning("Invalid offspring1 after mutation, using pre-mutation version");
+                offspring1 = beforeMutation1 ? parent1.Clone() : offspring1;
+            }
+            
             if (i + 1 < newPopulation.Length)
+            {
+                var beforeMutation2 = offspring2.IsValid();
                 mutation.Mutate(offspring2, _random);
+                if (!offspring2.IsValid())
+                {
+                    _logger.LogWarning("Invalid offspring2 after mutation, using pre-mutation version");
+                    offspring2 = beforeMutation2 ? parent2.Clone() : offspring2;
+                }
+            }
 
             newPopulation[i] = offspring1;
             if (i + 1 < newPopulation.Length)

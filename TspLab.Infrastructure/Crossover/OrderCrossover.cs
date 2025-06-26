@@ -60,6 +60,12 @@ public sealed class OrderCrossover : ICrossover
         var offspring = new int[length];
         var used = new bool[length];
 
+        // Validate parent tours before proceeding
+        if (!primary.IsValid())
+            throw new ArgumentException("Primary parent tour is invalid", nameof(primary));
+        if (!secondary.IsValid())
+            throw new ArgumentException("Secondary parent tour is invalid", nameof(secondary));
+
         // Select random crossover points
         var start = random.Next(length);
         var end = random.Next(length);
@@ -73,6 +79,13 @@ public sealed class OrderCrossover : ICrossover
         for (int i = start; i <= end; i++)
         {
             var cityIndex = primaryCities[i];
+            
+            // Validate city index to prevent array bounds issues
+            if (cityIndex < 0 || cityIndex >= length)
+            {
+                throw new InvalidOperationException($"Invalid city index {cityIndex} in tour of length {length}");
+            }
+            
             offspring[i] = cityIndex;
             used[cityIndex] = true;
         }
@@ -86,7 +99,8 @@ public sealed class OrderCrossover : ICrossover
             var secondaryIndex = (end + 1 + i) % length;
             var cityIndex = secondaryCities[secondaryIndex];
 
-            if (!used[cityIndex])
+            // Validate city index and check if already used
+            if (cityIndex >= 0 && cityIndex < length && !used[cityIndex])
             {
                 offspring[fillIndex] = cityIndex;
                 used[cityIndex] = true;
