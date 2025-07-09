@@ -18,14 +18,29 @@ public sealed class TwoOptMutation : IMutation
 
         if (random.NextDouble() > MutationRate) return;
 
-        if (tour.Length < 4) return; // Need at least 4 cities for 2-opt
+        if (tour.Length < 3) return; // Need at least 3 cities for 2-opt
 
-        var i = random.Next(tour.Length - 1);
-        var j = random.Next(i + 2, tour.Length + (i == 0 ? -1 : 0));
+        // Select two distinct positions that will define the edges to remove
+        var i = random.Next(tour.Length);
+        var j = random.Next(tour.Length);
 
-        if (j >= tour.Length) j = tour.Length - 1;
+        // Ensure i and j are different and properly ordered
+        while (j == i)
+        {
+            j = random.Next(tour.Length);
+        }
 
-        // Reverse the segment between i+1 and j
-        tour.ReverseSegment(i + 1, j);
+        // Ensure i < j for consistent processing
+        if (i > j)
+        {
+            (i, j) = (j, i);
+        }
+
+        // Skip if the segment is too small (would result in no change)
+        if (j - i < 2) return;
+
+        // Apply 2-opt: reverse the segment between i and j (inclusive)
+        // This removes edges (i-1,i) and (j,j+1) and adds (i-1,j) and (i,j+1)
+        tour.ReverseSegment(i, j);
     }
 }
